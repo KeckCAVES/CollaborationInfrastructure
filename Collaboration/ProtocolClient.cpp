@@ -1,0 +1,145 @@
+/***********************************************************************
+ProtocolClient - Abstract base class for the client-side components of
+collaboration protocols that can be added to the base protocol
+implemented by CollaborationClient and CollaborationServer, to simplify
+creating complex higher-level protocols.
+Copyright (c) 2009 Oliver Kreylos
+
+This file is part of the Vrui remote collaboration infrastructure.
+
+The Vrui remote collaboration infrastructure is free software; you can
+redistribute it and/or modify it under the terms of the GNU General
+Public License as published by the Free Software Foundation; either
+version 2 of the License, or (at your option) any later version.
+
+The Vrui remote collaboration infrastructure is distributed in the hope
+that it will be useful, but WITHOUT ANY WARRANTY; without even the
+implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along
+with the Vrui remote collaboration infrastructure; if not, write to the
+Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+02111-1307 USA
+***********************************************************************/
+
+#include <Collaboration/CollaborationPipe.h>
+
+#include <Collaboration/ProtocolClient.h>
+
+namespace Collaboration {
+
+/**************************************************
+Methods of class ProtocolClient::RemoteClientState:
+**************************************************/
+
+ProtocolClient::RemoteClientState::RemoteClientState(void)
+	{
+	}
+
+ProtocolClient::RemoteClientState::~RemoteClientState(void)
+	{
+	}
+
+/*******************************
+Methods of class ProtocolClient:
+*******************************/
+
+ProtocolClient::ProtocolClient(void)
+	:messageIdBase(0)
+	{
+	}
+
+ProtocolClient::~ProtocolClient(void)
+	{
+	}
+
+unsigned int ProtocolClient::getNumMessages(void) const
+	{
+	/* Default is not to have protocol messages: */
+	return 0;
+	}
+
+void ProtocolClient::sendConnectRequest(CollaborationPipe& pipe)
+	{
+	/* Must send a zero to indicate an empty protocol message: */
+	pipe.write<unsigned int>(0);
+	}
+
+void ProtocolClient::receiveConnectReply(CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::receiveConnectReject(CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::sendDisconnectRequest(CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::receiveDisconnectReply(CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::sendClientUpdate(CollaborationPipe& pipe)
+	{
+	}
+
+ProtocolClient::RemoteClientState* ProtocolClient::receiveClientConnect(CollaborationPipe& pipe)
+	{
+	/* Return a dummy object: */
+	return new RemoteClientState;
+	}
+
+void ProtocolClient::receiveClientDisconnect(RemoteClientState* rcs,CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::receiveServerUpdate(CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::receiveServerUpdate(RemoteClientState* rcs,CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::rejectedByServer(void)
+	{
+	}
+
+bool ProtocolClient::handleMessage(unsigned int messageId,CollaborationPipe& pipe)
+	{
+	/* Default is to reject all messages: */
+	return false;
+	}
+
+void ProtocolClient::beforeClientUpdate(CollaborationPipe& pipe)
+	{
+	}
+
+void ProtocolClient::connectClient(ProtocolClient::RemoteClientState* rcs)
+	{
+	}
+
+void ProtocolClient::disconnectClient(ProtocolClient::RemoteClientState* rcs)
+	{
+	}
+
+void ProtocolClient::frame(void)
+	{
+	}
+
+void ProtocolClient::frame(ProtocolClient::RemoteClientState* rcs)
+	{
+	}
+
+void ProtocolClient::display(GLContextData& contextData) const
+	{
+	}
+
+void ProtocolClient::display(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
+	{
+	}
+
+}
