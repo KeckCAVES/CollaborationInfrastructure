@@ -21,14 +21,14 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
+#include <Collaboration/FooServer.h>
+
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
 
 #include <Collaboration/CollaborationPipe.h>
 
 #include <Collaboration/FooCrapSender.h>
-
-#include <Collaboration/FooServer.h>
 
 #define DUMP_PROTOCOL 0
 

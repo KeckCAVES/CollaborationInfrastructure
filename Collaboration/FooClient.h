@@ -48,6 +48,7 @@ class FooClient:public ProtocolClient
 	/* Methods from ProtocolClient: */
 	virtual const char* getName(void) const;
 	virtual unsigned int getNumMessages(void) const;
+	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
 	virtual void sendConnectRequest(CollaborationPipe& pipe);
 	virtual void receiveConnectReply(CollaborationPipe& pipe);
 	virtual void receiveConnectReject(CollaborationPipe& pipe);

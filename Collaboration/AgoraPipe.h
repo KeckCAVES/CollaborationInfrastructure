@@ -1,5 +1,5 @@
 /***********************************************************************
-EmineoPipe - Common interface between an Emineo server and an Emineo
+AgoraPipe - Common interface between an Agora server and an Agora
 client.
 Copyright (c) 2009 Oliver Kreylos
 
@@ -21,23 +21,23 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef EMINEOPIPE_INCLUDED
-#define EMINEOPIPE_INCLUDED
+#ifndef AGORAPIPE_INCLUDED
+#define AGORAPIPE_INCLUDED
 
 #include <Collaboration/CollaborationPipe.h>
 
 namespace Collaboration {
 
-struct EmineoPipe
+struct AgoraPipe
 	{
 	/* Embedded classes: */
 	protected:
-	typedef CollaborationPipe::Scalar Scalar; // Scalar type in 3D video space
-	typedef CollaborationPipe::OGTransform OGTransform; // Class for 3D video transformations
+	typedef CollaborationPipe::Scalar Scalar; // Scalar type in virtual video space
+	typedef CollaborationPipe::OGTransform OGTransform; // Orthogonal transformation in virtual video space
 	
 	/* Elements: */
-	static const char* protocolName; // Network name of Emineo protocol
-	static const unsigned int numProtocolMessages; // Number of Emineo-specific protocol messages
+	static const char* protocolName; // Network name of Agora protocol
+	static const unsigned int numProtocolMessages; // Number of Agora-specific protocol messages
 	};
 
 }

@@ -21,6 +21,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
+#include <Collaboration/EmineoClient.h>
+
 #include <iostream>
 #include <stdexcept>
 #include <Misc/ThrowStdErr.h>
@@ -46,15 +48,13 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #define EMINEO_USE_WTS_FUSED_RENDERER  0
 #define EMINEO_USE_WTS_PLAIN_RENDERER  1
 
-#include <Collaboration/EmineoClient.h>
-
 namespace Collaboration {
 
 /************************************************
 Methods of class EmineoClient::RemoteClientState:
 ************************************************/
 
-EmineoClient::RemoteClientState::RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort,Comm::MulticastPipe* mcPipe)
+EmineoClient::RemoteClientState::RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort)
 	:gatewayHostname(sGatewayHostname),gatewayPort(sGatewayPort),
 	 hasSource(!gatewayHostname.empty()&&gatewayPort>0),
 	 facades(0),renderer(0)
@@ -147,25 +147,6 @@ Methods of class EmineoClient:
 EmineoClient::EmineoClient(void)
 	:gatewayHostname(""),gatewayPort(-1),hasSource(false)
 	{
-	/* Open the Emineo configuration file: */
-	try
-		{
-		Misc::ConfigurationFile cfgFile(EMINEO_CONFIG_FILE);
-		Misc::ConfigurationFileSection cfg=cfgFile.getSection("/");
-		
-		/* Read all relevant settings: */
-		gatewayHostname=cfg.retrieveValue<std::string>("gatewayHostname",gatewayHostname);
-		gatewayPort=cfg.retrieveValue<int>("./gatewayPort",gatewayPort);
-		hasSource=gatewayHostname!=""&&gatewayPort>0;
-		cameraTransformation=cfg.retrieveValue<OGTransform>("cameraTransformation",cameraTransformation);
-		}
-	catch(...)
-		{
-		/* Ignore errors silently... */
-		}
-	
-	if(hasSource)
-		std::cout<<"EmineoClient::EmineoClient: Offering 3D video on gateway "<<gatewayHostname<<", port "<<gatewayPort<<std::endl;
 	}
 
 EmineoClient::~EmineoClient(void)
@@ -175,6 +156,18 @@ EmineoClient::~EmineoClient(void)
 const char* EmineoClient::getName(void) const
 	{
 	return protocolName;
+	}
+
+void EmineoClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+	{
+	/* Read all relevant settings: */
+	gatewayHostname=configFileSection.retrieveValue<std::string>("gatewayHostname",gatewayHostname);
+	gatewayPort=configFileSection.retrieveValue<int>("./gatewayPort",gatewayPort);
+	hasSource=gatewayHostname!=""&&gatewayPort>0;
+	cameraTransformation=configFileSection.retrieveValue<OGTransform>("cameraTransformation",cameraTransformation);
+	
+	if(hasSource)
+		std::cout<<"EmineoClient::initialize: Offering 3D video on gateway "<<gatewayHostname<<", port "<<gatewayPort<<std::endl;
 	}
 
 void EmineoClient::sendConnectRequest(CollaborationPipe& pipe)
@@ -195,7 +188,7 @@ void EmineoClient::sendClientUpdate(CollaborationPipe& pipe)
 		/* Send the current transformation from camera space into navigational space: */
 		OGTransform cam=OGTransform(Vrui::getInverseNavigationTransformation());
 		cam*=cameraTransformation;
-		sendOGTransform(cam,pipe);
+		pipe.writeTrackerState(cam);
 		}
 	}
 
@@ -205,10 +198,8 @@ EmineoClient::RemoteClientState* EmineoClient::receiveClientConnect(Collaboratio
 	std::string remoteGatewayHostname=pipe.read<std::string>();
 	int remoteGatewayPort=pipe.read<int>();
 	
-	std::cout<<"EmineoClient::receiveClientConnect: Whoa, the new client has Emineo capability!"<<std::endl;
-	
 	/* Create a new remote client state object, connecting to the remote client's 3D video gateway: */
-	return new RemoteClientState(remoteGatewayHostname,remoteGatewayPort,Vrui::openPipe());
+	return new RemoteClientState(remoteGatewayHostname,remoteGatewayPort);
 	}
 
 void EmineoClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)
@@ -221,7 +212,7 @@ void EmineoClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Co
 	if(myRcs->hasSource)
 		{
 		/* Receive the remote client's current camera transformation: */
-		myRcs->cameraTransform.postNewValue(receiveOGTransform(pipe));
+		myRcs->cameraTransform.postNewValue(pipe.readTrackerState());
 		}
 	}
 

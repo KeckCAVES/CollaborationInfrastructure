@@ -1,6 +1,6 @@
 /***********************************************************************
-EmineoServer - Server object to implement the Emineo 3D video tele-
-immersion protocol.
+GrapheinServer - Server object to implement the Graphein shared
+annotation protocol.
 Copyright (c) 2009 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
@@ -21,42 +21,38 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef EMINEOSERVER_INCLUDED
-#define EMINEOSERVER_INCLUDED
+#ifndef GRAPHEINSERVER_INCLUDED
+#define GRAPHEINSERVER_INCLUDED
 
-#include <string>
-
+#include <vector>
 #include <Collaboration/ProtocolServer.h>
 
-#include <Collaboration/EmineoPipe.h>
+#include <Collaboration/GrapheinPipe.h>
 
 namespace Collaboration {
 
-class EmineoServer:public ProtocolServer,public EmineoPipe
+class GrapheinServer:public ProtocolServer,public GrapheinPipe
 	{
 	/* Embedded classes: */
 	protected:
 	class ClientState:public ProtocolServer::ClientState
 		{
-		friend class EmineoServer;
+		friend class GrapheinServer;
 		
 		/* Elements: */
 		private:
-		std::string gatewayHostname;
-		int gatewayPort;
-		bool hasSource; // Flag whether the client has a video source
-		OGTransform cameraTransform; // The client's current transformation from 3D video coordinates to navigational coordinates
+		CurveHasher curves; // The set of curves currently owned by the client
+		CurveActionList actions; // The queue of pending curve actions
 		
 		/* Constructors and destructors: */
-		public:
-		ClientState(const std::string& sGatewayHostname,int sGatewayPort);
+		ClientState(void);
 		virtual ~ClientState(void);
 		};
 	
 	/* Constructors and destructors: */
 	public:
-	EmineoServer(void); // Creates an Emineo server object
-	virtual ~EmineoServer(void); // Destroys the Emineo server object
+	GrapheinServer(void); // Creates an Graphein server object
+	virtual ~GrapheinServer(void); // Destroys the Graphein server object
 	
 	/* Methods from ProtocolServer: */
 	virtual const char* getName(void) const;
@@ -64,6 +60,7 @@ class EmineoServer:public ProtocolServer,public EmineoPipe
 	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
 	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
 	};
 
 }

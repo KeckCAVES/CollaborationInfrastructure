@@ -21,12 +21,12 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
+#include <Collaboration/EmineoServer.h>
+
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
 
 #include <Collaboration/CollaborationPipe.h>
-
-#include <Collaboration/EmineoServer.h>
 
 namespace Collaboration {
 
@@ -92,7 +92,7 @@ void EmineoServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 	if(myCs->hasSource)
 		{
 		/* Read the client's new camera transformation: */
-		myCs->cameraTransform=receiveOGTransform(pipe);
+		myCs->cameraTransform=pipe.readTrackerState();
 		}
 	}
 
@@ -118,7 +118,7 @@ void EmineoServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoc
 	if(mySourceCs->hasSource)
 		{
 		/* Send the source client's current camera transformation: */
-		sendOGTransform(mySourceCs->cameraTransform,pipe);
+		pipe.writeTrackerState(mySourceCs->cameraTransform);
 		}
 	}
 

@@ -27,7 +27,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Comm/ClusterPipe.h>
 #include <Geometry/Point.h>
 #include <Geometry/Vector.h>
-#include <Vrui/Geometry.h>
+#include <Geometry/OrthogonalTransformation.h>
 
 namespace Collaboration {
 
@@ -51,21 +51,27 @@ class CollaborationPipe:public Comm::ClusterPipe
 		MESSAGES_END // First message ID that can be used by a higher-level protocol
 		};
 	
+	typedef float Scalar; // Scalar type for transmitted geometric data
+	typedef Geometry::Point<Scalar,3> Point; // Type for points
+	typedef Geometry::Vector<Scalar,3> Vector; // Type for vectors
+	typedef Geometry::OrthogonalTransformation<Scalar,3> OGTransform; // Type for rigid body transformations with uniform scaling
+	
 	struct ClientState // Transient client state transmitted with every client update and server update
 		{
 		/* Elements: */
 		public:
 		
 		/* Definition of client's physical environment in client's navigational coordinates: */
-		Vrui::Point center; // Center point of client's environment
-		Vrui::Vector forward,up; // Forward and up vectors of client's environment
-		Vrui::Scalar size; // Size of client's environment
+		Point center; // Center point of client's environment
+		Vector forward,up; // Forward and up vectors of client's environment
+		Scalar size; // Size of client's environment
+		Scalar inchScale; // Length of one inch in client's navigational coordinates
 		
 		/* Definition of client's active viewers and input devices in client's navigational coordinates: */
 		unsigned int numViewers; // Number of viewers defined by client
-		Vrui::NavTrackerState* viewerStates; // States of client's viewers
+		OGTransform* viewerStates; // States of client's viewers
 		unsigned int numInputDevices; // Number of input devices defined by client
-		Vrui::NavTrackerState* inputDeviceStates; // States of client's input devices
+		OGTransform* inputDeviceStates; // States of client's input devices
 		
 		/* Constructors and destructors: */
 		ClientState(void) // Creates empty client state structure
@@ -98,8 +104,8 @@ class CollaborationPipe:public Comm::ClusterPipe
 		{
 		return read<MessageIdType>();
 		}
-	void writeTrackerState(const Vrui::NavTrackerState& trackerState); // Writes a tracker state to the pipe
-	Vrui::NavTrackerState readTrackerState(void); // Reads a tracker state from the pipe
+	void writeTrackerState(const OGTransform& trackerState); // Writes a tracker state to the pipe
+	OGTransform readTrackerState(void); // Reads a tracker state from the pipe
 	void writeClientState(const ClientState& clientState); // Writes transient client state to pipe
 	ClientState& readClientState(ClientState& clientState); // Reads transient client state from pipe
 	};

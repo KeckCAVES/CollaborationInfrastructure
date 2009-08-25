@@ -27,6 +27,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #define PROTOCOLCLIENT_INCLUDED
 
 /* Forward declarations: */
+namespace Misc {
+class ConfigurationFileSection;
+}
 class GLContextData;
 namespace Collaboration {
 class CollaborationPipe;
@@ -65,6 +68,7 @@ class ProtocolClient
 		}
 	virtual const char* getName(void) const =0; // Returns the protocol's name; must be unique and match exactly the name returned by the server engine
 	virtual unsigned int getNumMessages(void) const; // Returns the number of protocol messages used by this protocol
+	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection); // Called when the protocol client is registered with a collaboration client
 	
 	/***********************************
 	Client protocol engine hook methods:

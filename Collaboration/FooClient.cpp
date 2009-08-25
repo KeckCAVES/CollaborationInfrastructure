@@ -21,14 +21,14 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
+#include <Collaboration/FooClient.h>
+
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
 
 #include <Collaboration/CollaborationPipe.h>
 
 #include <Collaboration/FooCrapSender.h>
-
-#include <Collaboration/FooClient.h>
 
 #define DUMP_PROTOCOL 0
 
@@ -86,6 +86,13 @@ unsigned int FooClient::getNumMessages(void) const
 	#endif
 	
 	return 1;
+	}
+
+void FooClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooClient::initialize"<<std::endl;
+	#endif
 	}
 
 void FooClient::sendConnectRequest(CollaborationPipe& pipe)

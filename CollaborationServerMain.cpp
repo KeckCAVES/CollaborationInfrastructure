@@ -29,7 +29,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Collaboration/CollaborationServer.h>
 
 #include <Collaboration/FooServer.h>
+#include <Collaboration/AgoraServer.h>
 #include <Collaboration/EmineoServer.h>
+#include <Collaboration/GrapheinServer.h>
 
 volatile bool runServerLoop=true;
 
@@ -80,8 +82,14 @@ int main(int argc,char* argv[])
 	/* Add a Foo protocol object: */
 	server.registerProtocol(new Collaboration::FooServer);
 	
+	/* Add an Agora protocol object: */
+	server.registerProtocol(new Collaboration::AgoraServer);
+	
 	/* Add an Emineo protocol object: */
 	server.registerProtocol(new Collaboration::EmineoServer);
+	
+	/* Add a Graphein protocol object: */
+	server.registerProtocol(new Collaboration::GrapheinServer);
 	
 	/* Reroute SIG_INT signals to cleanly shut down multiplexer: */
 	struct sigaction sigIntAction;

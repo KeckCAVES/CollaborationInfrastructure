@@ -21,13 +21,12 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
+#include <Collaboration/CollaborationPipe.h>
+
 #include <Geometry/Rotation.h>
-#include <Geometry/OrthogonalTransformation.h>
 #include <Vrui/InputDevice.h>
 #include <Vrui/Viewer.h>
 #include <Vrui/Vrui.h>
-
-#include <Collaboration/CollaborationPipe.h>
 
 namespace Collaboration {
 
@@ -48,14 +47,14 @@ CollaborationPipe::ClientState& CollaborationPipe::ClientState::resize(unsigned 
 		/* Re-allocate the viewer states array: */
 		delete[] viewerStates;
 		numViewers=newNumViewers;
-		viewerStates=numViewers>0?new Vrui::NavTrackerState[numViewers]:0;
+		viewerStates=numViewers>0?new OGTransform[numViewers]:0;
 		}
 	if(newNumInputDevices!=numInputDevices)
 		{
 		/* Re-allocate the input device states array: */
 		delete[] inputDeviceStates;
 		numInputDevices=newNumInputDevices;
-		inputDeviceStates=numInputDevices>0?new Vrui::NavTrackerState[numInputDevices]:0;
+		inputDeviceStates=numInputDevices>0?new OGTransform[numInputDevices]:0;
 		}
 	
 	return *this;
@@ -67,17 +66,18 @@ CollaborationPipe::ClientState& CollaborationPipe::ClientState::updateFromVrui(v
 	const Vrui::NavTransform& invNav=Vrui::getInverseNavigationTransformation();
 	
 	/* Get the definition of the physical environment: */
-	center=invNav.transform(Vrui::getDisplayCenter());
-	forward=invNav.transform(Vrui::getForwardDirection());
-	up=invNav.transform(Vrui::getUpDirection());
-	size=invNav.getScaling()*Vrui::getDisplaySize();
+	center=Point(invNav.transform(Vrui::getDisplayCenter()));
+	forward=Vector(invNav.transform(Vrui::getForwardDirection()));
+	up=Vector(invNav.transform(Vrui::getUpDirection()));
+	size=Scalar(invNav.getScaling()*Vrui::getDisplaySize());
+	inchScale=Scalar(invNav.getScaling()*Vrui::getInchFactor());
 	
 	/* Get the positions/orientations of all viewers and input devices: */
 	resize(Vrui::getNumViewers(),Vrui::getNumInputDevices());
 	for(unsigned int i=0;i<numViewers;++i)
-		viewerStates[i]=invNav*Vrui::NavTrackerState(Vrui::getViewer(i)->getHeadTransformation());
+		viewerStates[i]=OGTransform(invNav*Vrui::NavTrackerState(Vrui::getViewer(i)->getHeadTransformation()));
 	for(unsigned int i=0;i<numInputDevices;++i)
-		inputDeviceStates[i]=invNav*Vrui::NavTrackerState(Vrui::getInputDevice(i)->getTransformation());
+		inputDeviceStates[i]=OGTransform(invNav*Vrui::NavTrackerState(Vrui::getInputDevice(i)->getTransformation()));
 	
 	return *this;
 	}
@@ -96,30 +96,31 @@ CollaborationPipe::CollaborationPipe(const Comm::TCPSocket* sSocket,Comm::Multic
 	{
 	}
 
-void CollaborationPipe::writeTrackerState(const Vrui::NavTrackerState& trackerState)
+void CollaborationPipe::writeTrackerState(const CollaborationPipe::OGTransform& trackerState)
 	{
-	write<Vrui::Scalar>(trackerState.getTranslation().getComponents(),3);
-	write<Vrui::Scalar>(trackerState.getRotation().getQuaternion(),4);
-	write<Vrui::Scalar>(trackerState.getScaling());
+	write<Scalar>(trackerState.getTranslation().getComponents(),3);
+	write<Scalar>(trackerState.getRotation().getQuaternion(),4);
+	write<Scalar>(trackerState.getScaling());
 	}
 
-Vrui::NavTrackerState CollaborationPipe::readTrackerState(void)
+CollaborationPipe::OGTransform CollaborationPipe::readTrackerState(void)
 	{
-	Vrui::Vector translation;
-	read<Vrui::Scalar>(translation.getComponents(),3);
-	Vrui::Scalar rotationQuaternion[4];
-	read<Vrui::Scalar>(rotationQuaternion,4);
-	Vrui::Scalar scaling=read<Vrui::Scalar>();
-	return Vrui::NavTrackerState(translation,Vrui::Rotation::fromQuaternion(rotationQuaternion),scaling);
+	Vector translation;
+	read<Scalar>(translation.getComponents(),3);
+	Scalar rotationQuaternion[4];
+	read<Scalar>(rotationQuaternion,4);
+	Scalar scaling=read<Scalar>();
+	return OGTransform(translation,OGTransform::Rotation::fromQuaternion(rotationQuaternion),scaling);
 	}
 
 void CollaborationPipe::writeClientState(const CollaborationPipe::ClientState& clientState)
 	{
 	/* Write the client's physical environment definition: */
-	write<Vrui::Scalar>(clientState.center.getComponents(),3);
-	write<Vrui::Scalar>(clientState.forward.getComponents(),3);
-	write<Vrui::Scalar>(clientState.up.getComponents(),3);
-	write<Vrui::Scalar>(clientState.size);
+	write<Scalar>(clientState.center.getComponents(),3);
+	write<Scalar>(clientState.forward.getComponents(),3);
+	write<Scalar>(clientState.up.getComponents(),3);
+	write<Scalar>(clientState.size);
+	write<Scalar>(clientState.inchScale);
 	
 	/* Write the client's viewer and input device states: */
 	write<unsigned int>(clientState.numViewers);
@@ -133,10 +134,11 @@ void CollaborationPipe::writeClientState(const CollaborationPipe::ClientState& c
 CollaborationPipe::ClientState& CollaborationPipe::readClientState(CollaborationPipe::ClientState& clientState)
 	{
 	/* Read the client's physical environment definition: */
-	read<Vrui::Scalar>(clientState.center.getComponents(),3);
-	read<Vrui::Scalar>(clientState.forward.getComponents(),3);
-	read<Vrui::Scalar>(clientState.up.getComponents(),3);
-	read<Vrui::Scalar>(clientState.size);
+	read<Scalar>(clientState.center.getComponents(),3);
+	read<Scalar>(clientState.forward.getComponents(),3);
+	read<Scalar>(clientState.up.getComponents(),3);
+	read<Scalar>(clientState.size);
+	read<Scalar>(clientState.inchScale);
 	
 	/* Read the client's viewer and input device states: */
 	unsigned int newNumViewers=read<unsigned int>();

@@ -27,7 +27,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string>
 #include <Threads/Thread.h>
 #include <Threads/TripleBuffer.h>
-#include <Comm/MulticastPipe.h>
 #include <Geometry/OrthogonalTransformation.h>
 
 #include <Collaboration/ProtocolClient.h>
@@ -61,7 +60,7 @@ class EmineoClient:public ProtocolClient,public EmineoPipe
 		Threads::Thread initializeEmineoThread; // A background thread to initialize the remote client's Emineo renderer without delay
 		
 		/* Constructors and destructors: */
-		RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort,Comm::MulticastPipe* mcPipe); // Connects a TCP pipe to the remote client's 3D video gateway
+		RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort); // Connects a TCP pipe to the remote client's 3D video gateway
 		virtual ~RemoteClientState(void); // Shuts down the 3D video pipe
 		
 		/* Methods: */
@@ -82,6 +81,7 @@ class EmineoClient:public ProtocolClient,public EmineoPipe
 	
 	/* Methods from ProtocolClient: */
 	virtual const char* getName(void) const;
+	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
 	virtual void sendConnectRequest(CollaborationPipe& pipe);
 	virtual void sendClientUpdate(CollaborationPipe& pipe);
 	virtual RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);

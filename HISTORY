@@ -3,3 +3,7 @@ Vrui collaboration infrastructure change history
 
 CollaborationInfrastructure-1.0:
 - Beginning of history file
+
+CollaborationInfrastructure-1.1:
+- Added shared annotation protocol
+- Fixed several bugs

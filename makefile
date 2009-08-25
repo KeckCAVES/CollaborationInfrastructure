@@ -28,7 +28,7 @@ PACKAGEROOT := $(shell pwd)
 # makefiles for Vrui-based applications, but the directory in which Vrui
 # itself was built. This is because the collaboration infrastructure is
 # an extension of Vrui itself.
-VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-056
+VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-063
 
 # Set this to 0 to disable Emineo support (say, if you don't have the
 # required Emineo package, for instance):
@@ -58,6 +58,10 @@ GLSUPPORT_USE_TLS = 0
 # Everything below here should not have to be changed
 ########################################################################
 
+# Specify version of created dynamic shared libraries
+MAJORLIBVERSION = 1
+MINORLIBVERSION = 1
+
 # Specify default optimization/debug level
 ifdef DEBUG
   DEFAULTDEBUGLEVEL = 3
@@ -74,10 +78,6 @@ else
   LIBDESTDIR = $(PACKAGEROOT)/$(LIBEXT)
 endif
 
-# Specify version of created dynamic shared libraries
-MAJORLIBVERSION = 1
-MINORLIBVERSION = 1
-
 # Directories for installation components
 HEADERINSTALLDIR = $(INSTALLDIR)/$(INCLUDEEXT)
 ifdef DEBUG
@@ -92,16 +92,42 @@ endif
 ETCINSTALLDIR = $(INSTALLDIR)/etc
 SHAREINSTALLDIR = $(INSTALLDIR)/share
 
+########################################################################
+# Definitions for required software packages
+########################################################################
+
+# The SPEEX speech coding library:
+SPEEX_BASEDIR = /usr
+SPEEX_DEPENDS = 
+SPEEX_INCLUDE = 
+SPEEX_LIBDIR  = 
+SPEEX_LIBS    = -lspeex
+
+# The ogg multimedia container library:
+OGG_BASEDIR = /usr
+OGG_DEPENDS = 
+OGG_INCLUDE = 
+OGG_LIBDIR  = 
+OGG_LIBS    = -logg
+
+# The Theora video codec library:
+THEORA_BASEDIR = /usr
+THEORA_DEPENDS = OGG
+THEORA_INCLUDE = 
+THEORA_LIBDIR  = 
+THEORA_LIBS    = -ltheora
+
 # Package definition for Emineo rendering architecture:
 EMINEO_BASEDIR = $(EMINEOPACKAGEROOT)
 EMINEO_DEPENDS = MYVRUI
 EMINEO_INCLUDE = -I$(EMINEOPACKAGEROOT)/include
 EMINEO_LIBDIR  = -L$(EMINEOPACKAGEROOT)/build
 EMINEO_LIBS    = -lEmineoRenderer.$(LDEXT)
+EMINEO_LINKLIBFLAGS = -Wl,-rpath $(EMINEOPACKAGEROOT)/build
 
 # Package definition for Vrui collaboration infrastructure:
 MYCOLLABORATION_BASEDIR     = $(PACKAGEROOT)
-MYCOLLABORATION_DEPENDS     = MYVRUI
+MYCOLLABORATION_DEPENDS     = MYVRUI THEORA SPEEX
 ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
   MYCOLLABORATION_DEPENDS  += EMINEO
 endif
@@ -151,15 +177,23 @@ LIBRARIES += $(LIBRARY_NAMES:%=$(call LIBRARYNAME,%))
 EXECUTABLES += $(EXEDIR)/CollaborationServer
 
 #
-# The collaboration server test program:
+# The collaboration client test program:
 #
 
 EXECUTABLES += $(EXEDIR)/CollaborationClientTest
 
-ALL = config $(LIBRARIES) $(EXECUTABLES)
+#
+# The Emineo test program:
+#
+
+ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
+  EXECUTABLES += $(EXEDIR)/EmineoTest
+endif
+
+ALL = $(LIBRARIES) $(EXECUTABLES) $(MAKEFILEFRAGMENT)
 
 .PHONY: all
-all: $(ALL)
+all: config $(ALL)
 
 ########################################################################
 # Pseudo-target to print configuration options
@@ -221,6 +255,16 @@ COLLABORATION_HEADERS = Collaboration/CollaborationPipe.h \
                         Collaboration/ProtocolClient.h \
                         Collaboration/FooServer.h \
                         Collaboration/FooClient.h \
+                        Collaboration/AgoraPipe.h \
+                        Collaboration/AgoraServer.h \
+                        Collaboration/SpeexEncoder.h \
+                        Collaboration/SpeexDecoder.h \
+                        Collaboration/V4L2VideoDevice.h \
+                        Collaboration/TheoraWrappers.h \
+                        Collaboration/AgoraClient.h \
+                        Collaboration/GrapheinPipe.h \
+                        Collaboration/GrapheinServer.h \
+                        Collaboration/GrapheinClient.h \
                         Collaboration/EmineoPipe.h \
                         Collaboration/EmineoServer.h
 ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
@@ -234,19 +278,25 @@ COLLABORATION_SOURCES = Collaboration/CollaborationPipe.cpp \
                         Collaboration/ProtocolClient.cpp \
                         Collaboration/FooServer.cpp \
                         Collaboration/FooClient.cpp \
+                        Collaboration/AgoraPipe.cpp \
+                        Collaboration/AgoraServer.cpp \
+                        Collaboration/SpeexEncoder.cpp \
+                        Collaboration/SpeexDecoder.cpp \
+                        Collaboration/V4L2VideoDevice.cpp \
+                        Collaboration/AgoraClient.cpp \
+                        Collaboration/GrapheinPipe.cpp \
+                        Collaboration/GrapheinServer.cpp \
+                        Collaboration/GrapheinClient.cpp \
                         Collaboration/EmineoPipe.cpp \
                         Collaboration/EmineoServer.cpp
 ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
   COLLABORATION_SOURCES += Collaboration/EmineoClient.cpp
 endif
 
-$(OBJDIR)/Collaboration/EmineoClient.o: CFLAGS += -DEMINEO_CONFIG_FILE='"$(SHAREINSTALLDIR)/Collaboration/Emineo.cfg"'
+$(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATIONCLIENT_CONFIG_FILE='"$(ETCINSTALLDIR)/CollaborationClient.cfg"'
 
 $(call LIBRARYNAME,libCollaboration): PACKAGES += $(MYCOLLABORATION_DEPENDS)
 $(call LIBRARYNAME,libCollaboration): EXTRACINCLUDEFLAGS += $(MYCOLLABORATION_INCLUDE)
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  $(call LIBRARYNAME,libCollaboration): LINKLIBFLAGS += -Wl,-rpath $(EMINEOPACKAGEROOT)/build
-endif
 $(call LIBRARYNAME,libCollaboration): $(COLLABORATION_SOURCES:%.cpp=$(OBJDIR)/%.o)
 .PHONY: libCollaboration
 libCollaboration: $(call LIBRARYNAME,libCollaboration)
@@ -275,6 +325,15 @@ $(EXEDIR)/CollaborationClientTest: $(OBJDIR)/CollaborationClientTest.o
 .PHONY: CollaborationClientTest
 CollaborationClientTest: $(EXEDIR)/CollaborationClientTest
 
+#
+# The Emineo test program:
+#
+
+$(EXEDIR)/EmineoTest: PACKAGES += EMINEO
+$(EXEDIR)/EmineoTest: $(OBJDIR)/EmineoTest.o
+.PHONY: EmineoTest
+EmineoTest: $(EXEDIR)/EmineoTest
+
 ########################################################################
 # Specify installation rules for header files, libraries, executables,
 # configuration files, and shared files.
@@ -284,8 +343,8 @@ CollaborationClientTest: $(EXEDIR)/CollaborationClientTest
 # First argument: library name
 define CREATE_SYMLINK
 @-rm -f $(LIBINSTALLDIR)/$(call DSONAME,$(1)) $(LIBINSTALLDIR)/$(call LINKDSONAME,$(1))
-@ln -s $(LIBINSTALLDIR)/$(call FULLDSONAME,$(1)) $(LIBINSTALLDIR)/$(call DSONAME,$(1))
-@ln -s $(LIBINSTALLDIR)/$(call FULLDSONAME,$(1)) $(LIBINSTALLDIR)/$(call LINKDSONAME,$(1))
+@cd $(LIBINSTALLDIR) ; ln -s $(call FULLDSONAME,$(1)) $(call DSONAME,$(1))
+@cd $(LIBINSTALLDIR) ; ln -s $(call FULLDSONAME,$(1)) $(call LINKDSONAME,$(1))
 
 endef
 
@@ -304,7 +363,7 @@ install: all
 	@echo Installing executables...
 	@install -d $(EXECUTABLEINSTALLDIR)
 	@install $(EXECUTABLES) $(EXECUTABLEINSTALLDIR)
-# Install all shared files in SHAREINSTALLDIR:
-	@echo Installing shared files...
-	@install -d $(SHAREINSTALLDIR)/Collaboration
-	@install -m u=rw,go=r share/* $(SHAREINSTALLDIR)/Collaboration
+# Install all configuration files in ETCINSTALLDIR:
+	@echo Installing configuration files...
+	@install -d $(ETCINSTALLDIR)
+	@install -m u=rw,go=r share/* $(ETCINSTALLDIR)

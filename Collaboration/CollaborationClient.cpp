@@ -22,10 +22,14 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
+#include <Collaboration/CollaborationClient.h>
+
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
+#include <Misc/StandardValueCoders.h>
 #include <Comm/MulticastPipe.h>
 #include <Geometry/OrthogonalTransformation.h>
 #include <GL/gl.h>
@@ -37,8 +41,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <GLMotif/TextField.h>
 #include <GLMotif/ToggleButton.h>
 #include <Vrui/Vrui.h>
-
-#include <Collaboration/CollaborationClient.h>
 
 namespace Collaboration {
 
@@ -332,9 +334,32 @@ void* CollaborationClient::communicationThreadMethod(void)
 CollaborationClient::CollaborationClient(const char* hostname,int portId)
 	:pipe(new CollaborationPipe(hostname,portId,Vrui::openPipe())),
 	 clientHash(17),
-	 followClientIndex(-1),
-	 remoteClientDialogPopup(0),clientListRowColumn(0)
+	 followClientIndex(-1),faceClientIndex(-1),
+	 remoteClientDialogPopup(0),clientListRowColumn(0),
+	 fixGlyphScaling(false),renderRemoteEnvironments(false)
 	{
+	/* Initialize the remote viewer and input device glyphs early: */
+	viewerGlyph.enable(Vrui::Glyph::CROSSBALL,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
+	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
+	
+	/* Load persistent configuration data: */
+	try
+		{
+		/* Open the configuration file: */
+		configFile.load(COLLABORATIONCLIENT_CONFIG_FILE);
+		
+		/* Update all settings: */
+		Misc::ConfigurationFileSection rootSection=configFile.getSection("/");
+		viewerGlyph.configure(rootSection,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
+		inputDeviceGlyph.configure(rootSection,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
+		fixGlyphScaling=rootSection.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
+		renderRemoteEnvironments=rootSection.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
+		}
+	catch(std::runtime_error err)
+		{
+		/* Ignore the error; will use default values for all settings */
+		}
+	
 	/* Initialize the protocol message table to have invalid entries for the collaboration pipe's own messages: */
 	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
 		messageTable.push_back(0);
@@ -347,14 +372,8 @@ CollaborationClient::CollaborationClient(const char* hostname,int portId)
 	clientListRowColumn=new GLMotif::RowColumn("ClientListRowColumn",remoteClientDialogPopup);
 	clientListRowColumn->setOrientation(GLMotif::RowColumn::VERTICAL);
 	clientListRowColumn->setPacking(GLMotif::RowColumn::PACK_TIGHT);
-	clientListRowColumn->setNumMinorWidgets(2);
+	clientListRowColumn->setNumMinorWidgets(3);
 	clientListRowColumn->setColumnWeight(0,1.0f);
-	
-	/* Initialize the rendering flags: */
-	viewerGlyph.enable(Vrui::Glyph::CROSSBALL,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
-	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
-	fixGlyphScaling=true;
-	renderRemoteEnvironments=true;
 	}
 
 CollaborationClient::~CollaborationClient(void)
@@ -395,6 +414,10 @@ CollaborationClient::~CollaborationClient(void)
 
 void CollaborationClient::registerProtocol(ProtocolClient* newProtocol)
 	{
+	/* Call the new protocol plug-in's initialization method: */
+	Misc::ConfigurationFileSection protocolSection=configFile.getSection(newProtocol->getName());
+	newProtocol->initialize(*this,protocolSection);
+	
 	/* Store the new protocol plug-in in the list: */
 	protocols.push_back(newProtocol);
 	}
@@ -535,10 +558,15 @@ void CollaborationClient::frame(void)
 				clientName->setLabel(client->name.c_str());
 				
 				char toggleName[40];
-				snprintf(toggleName,sizeof(toggleName),"FollowNavTransformToggle%u",alIt->clientID);
-				GLMotif::ToggleButton* followNavTransformToggle=new GLMotif::ToggleButton(toggleName,clientListRowColumn,"Follow");
-				followNavTransformToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
-				followNavTransformToggle->getValueChangedCallbacks().add(this,&CollaborationClient::followNavTransformToggleValueChangedCallback);
+				snprintf(toggleName,sizeof(toggleName),"FollowClientToggle%u",alIt->clientID);
+				GLMotif::ToggleButton* followClientToggle=new GLMotif::ToggleButton(toggleName,clientListRowColumn,"Follow");
+				followClientToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
+				followClientToggle->getValueChangedCallbacks().add(this,&CollaborationClient::followClientToggleValueChangedCallback);
+				
+				snprintf(toggleName,sizeof(toggleName),"FaceClientToggle%u",alIt->clientID);
+				GLMotif::ToggleButton* faceClientToggle=new GLMotif::ToggleButton(toggleName,clientListRowColumn,"Face");
+				faceClientToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
+				faceClientToggle->getValueChangedCallbacks().add(this,&CollaborationClient::faceClientToggleValueChangedCallback);
 				
 				/* Pop up the dialog if this is the first remote client: */
 				if(clientList.size()==1)
@@ -562,7 +590,7 @@ void CollaborationClient::frame(void)
 					{
 					std::cout<<"Removing remote client "<<(*clIt)->name<<", ID "<<(*clIt)->clientID<<std::endl;
 					
-					/* Update the index of the followed client: */
+					/* Update the index of the followed/faced client: */
 					if(followClientIndex==clientIndex)
 						{
 						/* Disable client following: */
@@ -571,6 +599,14 @@ void CollaborationClient::frame(void)
 						}
 					else if(followClientIndex>clientIndex)
 						--followClientIndex;
+					if(faceClientIndex==clientIndex)
+						{
+						/* Disable client facing: */
+						faceClientIndex=-1;
+						Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+						}
+					else if(faceClientIndex>clientIndex)
+						--faceClientIndex;
 					
 					/* Process protocol plug-ins: */
 					for(Client::RemoteClientProtocolList::iterator pIt=(*clIt)->protocols.begin();pIt!=(*clIt)->protocols.end();++pIt)
@@ -618,9 +654,30 @@ void CollaborationClient::frame(void)
 					Vrui::NavTransform nav=Vrui::NavTransform::identity;
 					nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
 					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
-					nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize()/cs.size);
-					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Geometry::cross(cs.forward,cs.up),cs.forward)));
-					nav*=Vrui::NavTransform::translateToOriginFrom(cs.center);
+					nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize()/Vrui::Scalar(cs.size));
+					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
+					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.center));
+					Vrui::setNavigationTransformation(nav);
+					}
+			}
+		else if(faceClientIndex>=0)
+			{
+			const ServerState& ss=serverState.getLockedValue();
+			
+			/* Update the navigation transformation: */
+			unsigned int faceClientID=clientList[faceClientIndex]->clientID;
+			for(unsigned int clientIndex=0;clientIndex<ss.numClients;++clientIndex)
+				if(ss.clientIDs[clientIndex]==faceClientID)
+					{
+					const CollaborationPipe::ClientState& cs=ss.clientStates[clientIndex];
+					
+					Vrui::NavTransform nav=Vrui::NavTransform::identity;
+					nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
+					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::rotateAxis(Vrui::getUpDirection(),Math::rad(Vrui::Scalar(180))));
+					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
+					nav*=Vrui::NavTransform::scale(Vrui::getInchFactor()/Vrui::Scalar(cs.inchScale));
+					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
+					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.center));
 					Vrui::setNavigationTransformation(nav);
 					}
 			}
@@ -657,10 +714,10 @@ void CollaborationClient::display(GLContextData& contextData) const
 			glBegin(GL_LINES);
 			glColor3f(1.0f,0.0f,0.0f);
 			glVertex(cs.center);
-			glVertex(cs.center+cs.forward*(cs.size/Geometry::mag(cs.forward)));
+			glVertex(cs.center+cs.forward*(cs.size/CollaborationPipe::Scalar(Geometry::mag(cs.forward))));
 			glColor3f(0.0f,1.0f,0.0f);
 			glVertex(cs.center);
-			glVertex(cs.center+cs.up*(cs.size/Geometry::mag(cs.up)));
+			glVertex(cs.center+cs.up*(cs.size/CollaborationPipe::Scalar(Geometry::mag(cs.up))));
 			glEnd();
 			
 			glPopAttrib();
@@ -702,7 +759,7 @@ void CollaborationClient::display(GLContextData& contextData) const
 		}
 	}
 
-void CollaborationClient::followNavTransformToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
 	{
 	if(cbData->set)
 		{
@@ -713,7 +770,7 @@ void CollaborationClient::followNavTransformToggleValueChangedCallback(GLMotif::
 			if(newClientIndex!=followClientIndex)
 				{
 				/* Unset the previously set toggle: */
-				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*2+1));
+				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
 				if(oldToggle!=0)
 					oldToggle->setToggle(false);
 				
@@ -721,9 +778,22 @@ void CollaborationClient::followNavTransformToggleValueChangedCallback(GLMotif::
 				followClientIndex=newClientIndex;
 				}
 			}
+		else if(faceClientIndex>=0)
+			{
+			/* Unset the previously set toggle: */
+			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
+			if(oldToggle!=0)
+				oldToggle->setToggle(false);
+			
+			/* Stop facing the old client: */
+			faceClientIndex=-1;
+			
+			/* Follow the new client: */
+			followClientIndex=newClientIndex;
+			}
 		else
 			{
-			/* Try enable following: */
+			/* Try to enable following: */
 			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
 				followClientIndex=newClientIndex;
 			else
@@ -734,6 +804,55 @@ void CollaborationClient::followNavTransformToggleValueChangedCallback(GLMotif::
 		{
 		/* Disable following: */
 		followClientIndex=-1;
+		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+		}
+	}
+
+void CollaborationClient::faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	if(cbData->set)
+		{
+		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
+		
+		if(faceClientIndex>=0)
+			{
+			if(newClientIndex!=faceClientIndex)
+				{
+				/* Unset the previously set toggle: */
+				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
+				if(oldToggle!=0)
+					oldToggle->setToggle(false);
+				
+				/* Face the new client: */
+				faceClientIndex=newClientIndex;
+				}
+			}
+		else if(followClientIndex>=0)
+			{
+			/* Unset the previously set toggle: */
+			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
+			if(oldToggle!=0)
+				oldToggle->setToggle(false);
+			
+			/* Stop following the old client: */
+			followClientIndex=-1;
+			
+			/* Face the new client: */
+			faceClientIndex=newClientIndex;
+			}
+		else
+			{
+			/* Try to enable facing: */
+			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
+				faceClientIndex=newClientIndex;
+			else
+				cbData->toggle->setToggle(false);
+			}
+		}
+	else if(faceClientIndex>=0)
+		{
+		/* Disable facing: */
+		faceClientIndex=-1;
 		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
 		}
 	}

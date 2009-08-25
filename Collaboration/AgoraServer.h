@@ -1,6 +1,5 @@
 /***********************************************************************
-EmineoServer - Server object to implement the Emineo 3D video tele-
-immersion protocol.
+AgoraServer - Server object to implement the Agora group audio protocol.
 Copyright (c) 2009 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
@@ -21,42 +20,49 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef EMINEOSERVER_INCLUDED
-#define EMINEOSERVER_INCLUDED
+#ifndef AGORASERVER_INCLUDED
+#define AGORASERVER_INCLUDED
 
-#include <string>
+#include <Threads/TripleBuffer.h>
+#include <Threads/DropoutBuffer.h>
 
 #include <Collaboration/ProtocolServer.h>
+#include <Collaboration/TheoraWrappers.h>
 
-#include <Collaboration/EmineoPipe.h>
+#include <Collaboration/AgoraPipe.h>
 
 namespace Collaboration {
 
-class EmineoServer:public ProtocolServer,public EmineoPipe
+class AgoraServer:public ProtocolServer,public AgoraPipe
 	{
 	/* Embedded classes: */
 	protected:
 	class ClientState:public ProtocolServer::ClientState
 		{
-		friend class EmineoServer;
+		friend class AgoraServer;
 		
 		/* Elements: */
 		private:
-		std::string gatewayHostname;
-		int gatewayPort;
-		bool hasSource; // Flag whether the client has a video source
-		OGTransform cameraTransform; // The client's current transformation from 3D video coordinates to navigational coordinates
+		size_t speexFrameSize; // Client's SPEEX frame size
+		size_t speexPacketSize; // Client's SPEEX packet size
+		Threads::DropoutBuffer<char> speexPacketBuffer; // Buffer holding encoded SPEEX audio packets sent by the client
+		
+		bool hasTheora; // Flag whether the client is streaming video data
+		OggPacket theoraStreamHeaders[3]; // Ogg packets containing the client's Theora stream headers (header, comment, tables)
+		Threads::TripleBuffer<OggPacket> theoraPacketBuffer; // Triple buffer containing encoded video frames from the client
+		OGTransform videoTransform; // Client's current transformation from local video space to shared navigational space
+		Scalar videoSize[2]; // Client's virtual video size in client's video space
 		
 		/* Constructors and destructors: */
 		public:
-		ClientState(const std::string& sGatewayHostname,int sGatewayPort);
+		ClientState(void);
 		virtual ~ClientState(void);
 		};
 	
 	/* Constructors and destructors: */
 	public:
-	EmineoServer(void); // Creates an Emineo server object
-	virtual ~EmineoServer(void); // Destroys the Emineo server object
+	AgoraServer(void); // Creates an Agora server object
+	virtual ~AgoraServer(void); // Destroys the Agora server object
 	
 	/* Methods from ProtocolServer: */
 	virtual const char* getName(void) const;

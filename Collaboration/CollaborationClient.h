@@ -28,6 +28,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string>
 #include <vector>
 #include <Misc/HashTable.h>
+#include <Misc/ConfigurationFile.h>
 #include <Threads/Thread.h>
 #include <Threads/Mutex.h>
 #include <Threads/TripleBuffer.h>
@@ -129,6 +130,7 @@ class CollaborationClient
 	/* Elements: */
 	protected:
 	CollaborationPipe* pipe; // Pipe connected to the collaboration server
+	Misc::ConfigurationFile configFile; // Configuration file for the collaboration client and all protocol plug-ins
 	private:
 	Threads::Thread communicationThread; // Thread handling communication with the collaboration server
 	ProtocolList protocols; // List of protocols currently registered with the server
@@ -144,6 +146,7 @@ class CollaborationClient
 	Threads::TripleBuffer<ServerState> serverState; // Triple buffer containing updated states of remote clients
 	Threads::TripleBuffer<CollaborationPipe::ClientState> localState; // Triple buffer containing transient state of local client
 	int followClientIndex; // Index of client whose navigation transformation to follow (-1 if disabled)
+	int faceClientIndex; // Index of client whom to face in a conversation (-1 if disabled)
 	
 	/* User interface: */
 	GLMotif::PopupWindow* remoteClientDialogPopup; // Dialog window showing currently connected remote clients
@@ -169,6 +172,10 @@ class CollaborationClient
 	virtual ~CollaborationClient(void); // Disconnects from the collaboration server
 	
 	/* Methods: */
+	CollaborationPipe* getPipe(void) // Returns pointer to the client's collaboration pipe
+		{
+		return pipe;
+		}
 	virtual void registerProtocol(ProtocolClient* newProtocol); // Registers a new protocol with the client; must be called before connect()
 	virtual void connect(const char* clientName); // Runs the connection initiation protocol; throws exception if fails
 	Vrui::Glyph& getViewerGlyph(void) // Returns the glyph used to display remote viewers
@@ -183,7 +190,8 @@ class CollaborationClient
 	void setRenderRemoteEnvironments(bool enable); // Sets the remote environment rendering flag
 	virtual void frame(void); // Same as frame method of Vrui applications and vislets
 	virtual void display(GLContextData& contextData) const; // Same as display method of Vrui applications and vislets; needs to be called in navigation coordinates
-	void followNavTransformToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData); // Callback method when one of the "Follow" toggles changes value
+	void followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData); // Callback method when one of the "Follow" toggles changes value
+	void faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData); // Callback method when one of the "Face" toggles changes value
 	
 	/*********************************************************************
 	Hook methods to layer application-level protocols over the base

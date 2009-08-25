@@ -23,9 +23,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#include <Collaboration/CollaborationPipe.h>
-
 #include <Collaboration/ProtocolClient.h>
+
+#include <Collaboration/CollaborationPipe.h>
 
 namespace Collaboration {
 
@@ -58,6 +58,10 @@ unsigned int ProtocolClient::getNumMessages(void) const
 	{
 	/* Default is not to have protocol messages: */
 	return 0;
+	}
+
+void ProtocolClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+	{
 	}
 
 void ProtocolClient::sendConnectRequest(CollaborationPipe& pipe)
