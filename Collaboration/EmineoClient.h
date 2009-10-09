@@ -52,6 +52,7 @@ class EmineoClient:public ProtocolClient,public EmineoPipe
 		std::string gatewayHostname;
 		int gatewayPort;
 		bool hasSource; // Flag if the remote client was supposed to have a source, even if the connection actually failed
+		int rendererType; // Type of Emineo renderer to create
 		Threads::TripleBuffer<OGTransform> cameraTransform; // The current 3D video camera transformation of the remote client
 		
 		/* Elements from actual Emineo 3D video rendering engine: */
@@ -60,7 +61,7 @@ class EmineoClient:public ProtocolClient,public EmineoPipe
 		Threads::Thread initializeEmineoThread; // A background thread to initialize the remote client's Emineo renderer without delay
 		
 		/* Constructors and destructors: */
-		RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort); // Connects a TCP pipe to the remote client's 3D video gateway
+		RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort,int sRendererType); // Connects a TCP pipe to the remote client's 3D video gateway
 		virtual ~RemoteClientState(void); // Shuts down the 3D video pipe
 		
 		/* Methods: */
@@ -72,6 +73,7 @@ class EmineoClient:public ProtocolClient,public EmineoPipe
 	std::string gatewayHostname; // Hostname of client's 3D video gateway
 	int gatewayPort; // Port number of same
 	bool hasSource; // Flag whether this client has a 3D video source
+	int rendererType; // Type of Emineo renderer to create
 	OGTransform cameraTransformation; // Transformation from camera space to client's Vrui physical coordinates
 	
 	/* Constructors and destructors: */

@@ -28,7 +28,7 @@ PACKAGEROOT := $(shell pwd)
 # makefiles for Vrui-based applications, but the directory in which Vrui
 # itself was built. This is because the collaboration infrastructure is
 # an extension of Vrui itself.
-VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-063
+VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-066
 
 # Set this to 0 to disable Emineo support (say, if you don't have the
 # required Emineo package, for instance):
@@ -45,6 +45,10 @@ include $(VRUIPACKAGEROOT)/BuildRoot/Packages
 # NOTE: This must be the same directory into which Vrui itself was
 # installed.
 INSTALLDIR = $(HOME)/Vrui-1.0
+
+# Root directory for protocol plugins underneath Vrui's library
+# directory:
+PROTOCOLPLUGINEXT = CollaborationPlugins
 
 # Set this to 1 if Vrui executables and shared libraries shall contain
 # links to any shared libraries they link to. This will relieve a user
@@ -71,24 +75,24 @@ else
   DEFAULTOPTLEVEL = 3
 endif
 
-# Set destination directory for libraries
+# Set destination directory for libraries and plugins:
 ifdef DEBUG
   LIBDESTDIR = $(PACKAGEROOT)/$(LIBEXT)/debug
 else
   LIBDESTDIR = $(PACKAGEROOT)/$(LIBEXT)
 endif
+PLUGINDESTDIR = $(LIBDESTDIR)/$(PROTOCOLPLUGINEXT)
 
 # Directories for installation components
 HEADERINSTALLDIR = $(INSTALLDIR)/$(INCLUDEEXT)
 ifdef DEBUG
   LIBINSTALLDIR = $(INSTALLDIR)/$(LIBEXT)/debug
   EXECUTABLEINSTALLDIR = $(INSTALLDIR)/$(BINEXT)/debug
-  PLUGININSTALLDIR = $(INSTALLDIR)/$(LIBEXT)/debug
 else
   LIBINSTALLDIR = $(INSTALLDIR)/$(LIBEXT)
   EXECUTABLEINSTALLDIR = $(INSTALLDIR)/$(BINEXT)
-  PLUGININSTALLDIR = $(INSTALLDIR)/$(LIBEXT)
 endif
+PLUGININSTALLDIR = $(LIBINSTALLDIR)/$(PROTOCOLPLUGINEXT)
 ETCINSTALLDIR = $(INSTALLDIR)/etc
 SHAREINSTALLDIR = $(INSTALLDIR)/share
 
@@ -147,6 +151,7 @@ else
   CFLAGS += $(CDSOFLAGS)
   LIBRARYNAME=$(LIBDESTDIR)/$(call FULLDSONAME,$(1))
 endif
+PLUGINNAME = $(PLUGINDESTDIR)/lib$(1).$(PLUGINFILEEXT)
 
 ########################################################################
 # List packages used by this project
@@ -160,6 +165,7 @@ PACKAGES =
 ########################################################################
 
 LIBRARIES = 
+PLUGINS = 
 EXECUTABLES = 
 
 #
@@ -169,6 +175,23 @@ EXECUTABLES =
 LIBRARY_NAMES = libCollaboration
 
 LIBRARIES += $(LIBRARY_NAMES:%=$(call LIBRARYNAME,%))
+
+#
+# The protocol plugins:
+#
+
+PLUGIN_NAMES = FooServer \
+               FooClient \
+               AgoraServer \
+               AgoraClient \
+               GrapheinServer \
+               GrapheinClient \
+               EmineoServer
+ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
+  PLUGIN_NAMES += EmineoClient
+endif
+
+PLUGINS += $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
 
 #
 # The collaboration server test program:
@@ -190,10 +213,13 @@ ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
   EXECUTABLES += $(EXEDIR)/EmineoTest
 endif
 
-ALL = $(LIBRARIES) $(EXECUTABLES) $(MAKEFILEFRAGMENT)
+ALL = $(LIBRARIES) $(PLUGINS) $(EXECUTABLES)
 
 .PHONY: all
 all: config $(ALL)
+
+# Make all plugins and executables depend on collaboration library:
+$(PLUGINS) $(EXECUTABLES): $(call LIBRARYNAME,libCollaboration)
 
 ########################################################################
 # Pseudo-target to print configuration options
@@ -225,6 +251,7 @@ endif
 extraclean:
 	-rm -f $(LIBRARY_NAMES:%=$(LIBDESTDIR)/$(call DSONAME,%))
 	-rm -f $(LIBRARY_NAMES:%=$(LIBDESTDIR)/$(call LINKDSONAME,%))
+	-rm -f $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
 
 .PHONY: extrasqueakyclean
 extrasqueakyclean:
@@ -252,48 +279,16 @@ COLLABORATION_HEADERS = Collaboration/CollaborationPipe.h \
                         Collaboration/CollaborationServer.h \
                         Collaboration/CollaborationClient.h \
                         Collaboration/ProtocolServer.h \
-                        Collaboration/ProtocolClient.h \
-                        Collaboration/FooServer.h \
-                        Collaboration/FooClient.h \
-                        Collaboration/AgoraPipe.h \
-                        Collaboration/AgoraServer.h \
-                        Collaboration/SpeexEncoder.h \
-                        Collaboration/SpeexDecoder.h \
-                        Collaboration/V4L2VideoDevice.h \
-                        Collaboration/TheoraWrappers.h \
-                        Collaboration/AgoraClient.h \
-                        Collaboration/GrapheinPipe.h \
-                        Collaboration/GrapheinServer.h \
-                        Collaboration/GrapheinClient.h \
-                        Collaboration/EmineoPipe.h \
-                        Collaboration/EmineoServer.h
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  COLLABORATION_HEADERS += Collaboration/EmineoClient.h
-endif
+                        Collaboration/ProtocolClient.h
 
 COLLABORATION_SOURCES = Collaboration/CollaborationPipe.cpp \
                         Collaboration/CollaborationServer.cpp \
                         Collaboration/CollaborationClient.cpp \
                         Collaboration/ProtocolServer.cpp \
-                        Collaboration/ProtocolClient.cpp \
-                        Collaboration/FooServer.cpp \
-                        Collaboration/FooClient.cpp \
-                        Collaboration/AgoraPipe.cpp \
-                        Collaboration/AgoraServer.cpp \
-                        Collaboration/SpeexEncoder.cpp \
-                        Collaboration/SpeexDecoder.cpp \
-                        Collaboration/V4L2VideoDevice.cpp \
-                        Collaboration/AgoraClient.cpp \
-                        Collaboration/GrapheinPipe.cpp \
-                        Collaboration/GrapheinServer.cpp \
-                        Collaboration/GrapheinClient.cpp \
-                        Collaboration/EmineoPipe.cpp \
-                        Collaboration/EmineoServer.cpp
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  COLLABORATION_SOURCES += Collaboration/EmineoClient.cpp
-endif
+                        Collaboration/ProtocolClient.cpp
 
-$(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATIONCLIENT_CONFIG_FILE='"$(ETCINSTALLDIR)/CollaborationClient.cfg"'
+$(OBJDIR)/Collaboration/CollaborationServer.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/lib%s.$(PLUGINFILEEXT)"'
+$(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/lib%s.$(PLUGINFILEEXT)"'
 
 $(call LIBRARYNAME,libCollaboration): PACKAGES += $(MYCOLLABORATION_DEPENDS)
 $(call LIBRARYNAME,libCollaboration): EXTRACINCLUDEFLAGS += $(MYCOLLABORATION_INCLUDE)
@@ -302,11 +297,47 @@ $(call LIBRARYNAME,libCollaboration): $(COLLABORATION_SOURCES:%.cpp=$(OBJDIR)/%.
 libCollaboration: $(call LIBRARYNAME,libCollaboration)
 
 #
+# The collaboration protocol plugins:
+#
+
+# Implicit rule for creating protocol plug-ins:
+$(call PLUGINNAME,%): PACKAGES += MYCOLLABORATION
+$(call PLUGINNAME,%): CFLAGS += $(CPLUGINFLAGS)
+$(call PLUGINNAME,%): $(OBJDIR)/Collaboration/%.o
+	@mkdir -p $(PLUGINDESTDIR)
+ifdef SHOWCOMMAND
+	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+else
+	@echo Linking $@...
+	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+endif
+
+$(call PLUGINNAME,GrapheinServer): $(OBJDIR)/Collaboration/GrapheinPipe.o \
+                                   $(OBJDIR)/Collaboration/GrapheinServer.o
+
+$(call PLUGINNAME,GrapheinClient): $(OBJDIR)/Collaboration/GrapheinPipe.o \
+                                   $(OBJDIR)/Collaboration/GrapheinClient.o
+
+$(call PLUGINNAME,AgoraServer): $(OBJDIR)/Collaboration/AgoraPipe.o \
+                                $(OBJDIR)/Collaboration/AgoraServer.o
+
+$(call PLUGINNAME,AgoraClient): PACKAGES += THEORA SPEEX
+$(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
+                                $(OBJDIR)/Collaboration/SpeexDecoder.o \
+                                $(OBJDIR)/Collaboration/V4L2VideoDevice.o \
+                                $(OBJDIR)/Collaboration/AgoraPipe.o \
+                                $(OBJDIR)/Collaboration/AgoraClient.o
+
+# Mark all protocol plugin object files as intermediate:
+.SECONDARY: $(PLUGIN_NAMES:%=$(OBJDIR)/Collaboration/%.o)
+
+#
 # The collaboration server test program:
 #
 
+$(OBJDIR)/CollaborationServerMain.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
+
 $(EXEDIR)/CollaborationServer: PACKAGES += MYCOLLABORATION
-$(EXEDIR)/CollaborationServer: $(call LIBRARYNAME,libCollaboration)
 $(EXEDIR)/CollaborationServer: $(OBJDIR)/CollaborationServerMain.o
 .PHONY: CollaborationServer
 CollaborationServer: $(EXEDIR)/CollaborationServer
@@ -315,12 +346,9 @@ CollaborationServer: $(EXEDIR)/CollaborationServer
 # The collaboration client test program:
 #
 
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  $(OBJDIR)/CollaborationClientTest.o: CFLAGS += -DCOLLABORATIONCLIENT_USE_EMINEO
-endif
+$(OBJDIR)/CollaborationClientTest.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
 
 $(EXEDIR)/CollaborationClientTest: PACKAGES += MYCOLLABORATION
-$(EXEDIR)/CollaborationClientTest: $(call LIBRARYNAME,libCollaboration)
 $(EXEDIR)/CollaborationClientTest: $(OBJDIR)/CollaborationClientTest.o
 .PHONY: CollaborationClientTest
 CollaborationClientTest: $(EXEDIR)/CollaborationClientTest
@@ -359,6 +387,10 @@ install: all
 	@install $(LIBRARIES) $(LIBINSTALLDIR)
 	@echo Configuring run-time linker...
 	$(foreach LIBNAME,$(LIBRARY_NAMES),$(call CREATE_SYMLINK,$(LIBNAME)))
+# Install all plugins in PLUGININSTALLDIR:
+	@echo Installing protocol plugins...
+	@install -d $(PLUGININSTALLDIR)
+	@install $(PLUGINS) $(PLUGININSTALLDIR)
 # Install all binaries in EXECUTABLEINSTALLDIR:
 	@echo Installing executables...
 	@install -d $(EXECUTABLEINSTALLDIR)
@@ -366,4 +398,24 @@ install: all
 # Install all configuration files in ETCINSTALLDIR:
 	@echo Installing configuration files...
 	@install -d $(ETCINSTALLDIR)
-	@install -m u=rw,go=r share/* $(ETCINSTALLDIR)
+	@install -m u=rw,go=r share/Collaboration.cfg $(ETCINSTALLDIR)
+
+# Sequence to destroy symlinks for dynamic libraries:
+# First argument: library name
+define DESTROY_SYMLINK
+@-rm -f $(LIBINSTALLDIR)/$(call DSONAME,$(1)) $(LIBINSTALLDIR)/$(call LINKDSONAME,$(1))
+
+endef
+
+uninstall:
+	@echo Removing header files...
+	@rm -rf $(HEADERINSTALLDIR)/Collaboration
+	@echo Removing libraries...
+	@rm -f $(LIBRARIES)
+	$(foreach LIBNAME,$(LIBRARY_NAMES),$(call DESTROY_SYMLINK,$(LIBNAME)))
+	@echo Removing protocol plugins...
+	@rm -rf $(PLUGININSTALLDIR)
+	@echo Removing executables...
+	@rm -f $(EXECUTABLES)
+	@echo Removing configuration files...
+	@rm -f $(ETCINSTALLDIR)/Collaboration.cfg

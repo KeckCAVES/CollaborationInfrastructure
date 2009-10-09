@@ -290,3 +290,21 @@ void FooClient::display(const ProtocolClient::RemoteClientState* rcs,GLContextDa
 	}
 
 }
+
+/****************
+DSO entry points:
+****************/
+
+extern "C" {
+
+Collaboration::ProtocolClient* createObject(Collaboration::ProtocolClientLoader& objectLoader)
+	{
+	return new Collaboration::FooClient;
+	}
+
+void destroyObject(Collaboration::ProtocolClient* object)
+	{
+	delete object;
+	}
+
+}

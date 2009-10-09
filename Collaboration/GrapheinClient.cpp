@@ -346,6 +346,12 @@ void GrapheinClient::receiveConnectReply(CollaborationPipe& pipe)
 	Vrui::getToolManager()->addClass(grapheinToolFactory,Vrui::ToolManager::defaultToolFactoryDestructor);
 	}
 
+void GrapheinClient::receiveDisconnectReply(CollaborationPipe& pipe)
+	{
+	/* Unregister the Graphein tool class before the client is unloaded: */
+	Vrui::getToolManager()->releaseClass("GrapheinTool");
+	}
+
 void GrapheinClient::sendClientUpdate(CollaborationPipe& pipe)
 	{
 	{
@@ -574,6 +580,24 @@ void GrapheinClient::toolCreationCallback(Vrui::ToolManager::ToolCreationCallbac
 		/* Set the tool's client pointer: */
 		grapheinTool->client=this;
 		}
+	}
+
+}
+
+/****************
+DSO entry points:
+****************/
+
+extern "C" {
+
+Collaboration::ProtocolClient* createObject(Collaboration::ProtocolClientLoader& objectLoader)
+	{
+	return new Collaboration::GrapheinClient;
+	}
+
+void destroyObject(Collaboration::ProtocolClient* object)
+	{
+	delete object;
 	}
 
 }

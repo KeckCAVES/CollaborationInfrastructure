@@ -43,8 +43,7 @@ void GrapheinPipe::writeCurve(CollaborationPipe& pipe,const GrapheinPipe::Curve&
 	pipe.write<GLubyte>(curve.color.getRgba(),3);
 	
 	/* Write the curve's vertex array: */
-	unsigned int numVertices=curve.vertices.size();
-	pipe.write(numVertices);
+	pipe.write<unsigned int>(curve.vertices.size());
 	for(std::vector<Point>::const_iterator vIt=curve.vertices.begin();vIt!=curve.vertices.end();++vIt)
 		pipe.write<Scalar>(vIt->getComponents(),3);
 	}

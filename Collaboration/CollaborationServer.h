@@ -25,8 +25,10 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #ifndef COLLABORATIONSERVER_INCLUDED
 #define COLLABORATIONSERVER_INCLUDED
 
+#include <utility>
 #include <string>
 #include <vector>
+#include <Plugins/ObjectLoader.h>
 #include <Threads/Thread.h>
 #include <Threads/Mutex.h>
 #include <Comm/TCPSocket.h>
@@ -34,6 +36,11 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/CollaborationPipe.h>
 #include <Collaboration/ProtocolServer.h>
+
+/* Forward declarations: */
+namespace Misc {
+class ConfigurationFileSection;
+}
 
 namespace Collaboration {
 
@@ -89,7 +96,7 @@ class CollaborationServer
 		~ClientConnection(void);
 		
 		/* Methods: */
-		bool negotiateProtocols(const ProtocolList& serverProtocols); // Finds the common subset of protocol plug-ins registered on the client and server; returns false if any protocol rejects the client
+		bool negotiateProtocols(CollaborationServer& server); // Finds the common subset of protocol plug-ins registered on the client and server; returns false if any protocol rejects the client
 		void sendClientConnectProtocols(ClientConnection* dest,CollaborationPipe& pipe); // Lets all protocol plug-ins shared by the two clients write their CLIENT_CONNECT message payloads
 		};
 	
@@ -120,6 +127,7 @@ class CollaborationServer
 	
 	/* Elements: */
 	private:
+	ProtocolServerLoader protocolLoader; // Object loader to dynamically load protocol plug-ins requested by clients
 	Comm::TCPSocket listenSocket; // Socket receiving connection requests from clients
 	Threads::Thread listenThread; // Thread receiving connection request messages
 	Threads::Mutex protocolListMutex; // Mutex protecting the protocol list
@@ -136,7 +144,7 @@ class CollaborationServer
 	
 	/* Constructors and destructors: */
 	public:
-	CollaborationServer(int listenPortId); // Creates a server object listening on the given port ID
+	CollaborationServer(const Misc::ConfigurationFileSection& configFileSection); // Creates a server object listening on the given port ID
 	virtual ~CollaborationServer(void);
 	
 	/* Methods: */
@@ -145,6 +153,7 @@ class CollaborationServer
 		return listenSocket.getPortId();
 		};
 	virtual void registerProtocol(ProtocolServer* newProtocol); // Registers a new protocol plug-in with the server; server inherits objects
+	virtual std::pair<ProtocolServer*,int> loadProtocol(std::string protocolName); // Returns a protocol server plug-in for the given protocol, or 0
 	virtual void update(void); // Signals the server to send state updates to all connected clients
 	
 	/*********************************************************************

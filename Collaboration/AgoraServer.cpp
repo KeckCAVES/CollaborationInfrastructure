@@ -205,3 +205,21 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 	}
 
 }
+
+/****************
+DSO entry points:
+****************/
+
+extern "C" {
+
+Collaboration::ProtocolServer* createObject(Collaboration::ProtocolServerLoader& objectLoader)
+	{
+	return new Collaboration::AgoraServer;
+	}
+
+void destroyObject(Collaboration::ProtocolServer* object)
+	{
+	delete object;
+	}
+
+}

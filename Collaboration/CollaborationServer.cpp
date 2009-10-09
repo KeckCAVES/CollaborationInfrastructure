@@ -27,6 +27,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #include <algorithm>
 #include <Misc/ThrowStdErr.h>
+#include <Misc/StandardValueCoders.h>
+#include <Misc/CompoundValueCoders.h>
+#include <Misc/ConfigurationFile.h>
 
 namespace Collaboration {
 
@@ -48,7 +51,7 @@ CollaborationServer::ClientConnection::~ClientConnection(void)
 		delete pIt->protocolClientState;
 	}
 
-bool CollaborationServer::ClientConnection::negotiateProtocols(const CollaborationServer::ProtocolList& serverProtocols)
+bool CollaborationServer::ClientConnection::negotiateProtocols(CollaborationServer& server)
 	{
 	bool result=true;
 	
@@ -62,25 +65,26 @@ bool CollaborationServer::ClientConnection::negotiateProtocols(const Collaborati
 		/* Read the length of the protocol-specific message payload: */
 		size_t protocolMessageLength=pipe.read<unsigned int>();
 		
-		/* Find the protocol in the server's list: */
-		unsigned int protocolIndex;
-		for(protocolIndex=0;protocolIndex<serverProtocols.size();++protocolIndex)
-			if(protocolName==serverProtocols[protocolIndex]->getName())
-				break;
-		
-		if(protocolIndex<serverProtocols.size())
+		/* Ask the server to load the protocol: */
+		std::cout<<"Loading protocol "<<protocolName<<"..."<<std::flush;
+		std::pair<ProtocolServer*,int> ps=server.loadProtocol(protocolName);
+		if(ps.first!=0)
 			{
+			std::cout<<" done"<<std::endl;
+			
 			/* Let the protocol plug-in process the message payload: */
-			ProtocolClientState* pcs=serverProtocols[protocolIndex]->receiveConnectRequest(protocolMessageLength,pipe);
+			ProtocolClientState* pcs=ps.first->receiveConnectRequest(protocolMessageLength,pipe);
 			
 			/* Add the protocol to the client state object's list: */
-			protocols.push_back(ProtocolListEntry(protocolIndex,i,serverProtocols[protocolIndex],pcs));
+			protocols.push_back(ProtocolListEntry(ps.second,i,ps.first,pcs));
 			
 			/* Bail out if the protocol plug-in returned a null pointer: */
 			result=pcs!=0;
 			}
 		else
 			{
+			std::cout<<" rejected"<<std::endl;
+			
 			/* Skip the protocol message payload: */
 			unsigned char skipBuffer[256];
 			while(protocolMessageLength>0)
@@ -236,10 +240,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 							bool connectionOk=true;
 							
 							/* Negotiate protocol plug-ins with the new client: */
-							{
-							Threads::Mutex::Lock protocolListLock(protocolListMutex);
-							connectionOk=connectionOk&&client->negotiateProtocols(protocols);
-							}
+							connectionOk=connectionOk&&client->negotiateProtocols(*this);
 							
 							/* Sort the new client's negotiated protocol list in order of ascending main list index to facilitate quick intersection tests: */
 							std::sort(client->protocols.begin(),client->protocols.end(),ClientConnection::ProtocolListEntry::comp);
@@ -515,10 +516,21 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 	return 0;
 	}
 
-CollaborationServer::CollaborationServer(int listenPortId)
-	:listenSocket(listenPortId,0),
+CollaborationServer::CollaborationServer(const Misc::ConfigurationFileSection& configFileSection)
+	:protocolLoader(configFileSection.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
+	 listenSocket(configFileSection.retrieveValue<int>("./listenPortId",-1),0),
 	 nextClientID(0)
 	{
+	typedef std::vector<std::string> StringList;
+	
+	/* Get additional search paths from configuration file section and add them to the object loader: */
+	StringList pluginSearchPaths=configFileSection.retrieveValue<StringList>("./pluginSearchPaths",StringList());
+	for(StringList::const_iterator tspIt=pluginSearchPaths.begin();tspIt!=pluginSearchPaths.end();++tspIt)
+		{
+		/* Add the path: */
+		protocolLoader.getDsoLocator().addPath(*tspIt);
+		}
+	
 	/* Initialize the protocol message table to have invalid entries for the collaboration pipe's own messages: */
 	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
 		messageTable.push_back(0);
@@ -555,7 +567,11 @@ CollaborationServer::~CollaborationServer(void)
 	
 	/* Delete all protocol plug-ins: */
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
-		delete *pIt;
+		{
+		/* Only delete the protocol plug-in if it is not managed by the protocol loader: */
+		if(!protocolLoader.isManaged(*pIt))
+			delete *pIt;
+		}
 	}
 
 void CollaborationServer::registerProtocol(ProtocolServer* newProtocol)
@@ -569,6 +585,48 @@ void CollaborationServer::registerProtocol(ProtocolServer* newProtocol)
 	unsigned int numMessages=newProtocol->getNumMessages();
 	for(unsigned int i=0;i<numMessages;++i)
 		messageTable.push_back(newProtocol);
+	}
+
+std::pair<ProtocolServer*,int> CollaborationServer::loadProtocol(std::string protocolName)
+	{
+	Threads::Mutex::Lock protocolListLock(protocolListMutex);
+	
+	std::pair<ProtocolServer*,int> result=std::pair<ProtocolServer*,int>(0,-1);
+	
+	/* Check if a protocol plug-in of the given name already exists: */
+	int numProtocols=int(protocols.size());
+	for(int index=0;index<numProtocols;++index)
+		if(protocols[index]->getName()==protocolName)
+			{
+			result.first=protocols[index];
+			result.second=index;
+			break;
+			}
+	
+	if(result.first==0)
+		{
+		/* Try loading a protocol plug-in dynamically: */
+		try
+			{
+			result.first=protocolLoader.createObject((protocolName+"Server").c_str());
+			result.second=numProtocols;
+			
+			/* Append the new protocol plug-in to the list: */
+			protocols.push_back(result.first);
+			
+			/* Register message IDs for the new protocol: */
+			result.first->messageIdBase=messageTable.size();
+			unsigned int numMessages=result.first->getNumMessages();
+			for(unsigned int i=0;i<numMessages;++i)
+				messageTable.push_back(result.first);
+			}
+		catch(std::runtime_error err)
+			{
+			/* Ignore the error: */
+			}
+		}
+	
+	return result;
 	}
 
 void CollaborationServer::update(void)

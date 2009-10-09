@@ -89,7 +89,7 @@ struct OggPacket:public ogg_packet // Helper structure to manage ogg packets
 			allocSize=bytes;
 			packet=new unsigned char[allocSize];
 			}
-		pipe.read(packet,bytes);
+		pipe.read<unsigned char>(packet,bytes);
 		}
 	size_t getNetworkSize(void) const // Returns the size of a packet when written to the network
 		{
@@ -101,7 +101,7 @@ struct OggPacket:public ogg_packet // Helper structure to manage ogg packets
 		pipe.write<ogg_int64_t>(granulepos);
 		pipe.write<ogg_int64_t>(packetno);
 		pipe.write<unsigned int>(bytes);
-		pipe.write(packet,bytes);
+		pipe.write<unsigned char>(packet,bytes);
 		}
 	};
 

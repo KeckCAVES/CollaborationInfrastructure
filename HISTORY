@@ -7,3 +7,10 @@ CollaborationInfrastructure-1.0:
 CollaborationInfrastructure-1.1:
 - Added shared annotation protocol
 - Fixed several bugs
+
+CollaborationInfrastructure-1.2:
+- Implemented protocol clients and servers as plug-ins.
+- Changed Graphein client protocol plug-in to delete Graphein tool class
+  before client class is deleted.
+- Added option to uninstall collaboration infrastructure to makefile.
+- Bumped required Vrui version to 1.0-066.

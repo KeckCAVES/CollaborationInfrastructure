@@ -431,7 +431,7 @@ void AgoraClient::initialize(CollaborationClient& collaborationClient,Misc::Conf
 			}
 		}
 	
-	int playbackNodeIndex=configFileSection.retrieveValue<int>("./playbackNodeIndex",playbackNodeIndex);
+	playbackNodeIndex=configFileSection.retrieveValue<int>("./playbackNodeIndex",playbackNodeIndex);
 	playbackPcmDeviceName=configFileSection.retrieveValue<std::string>("./playbackPcmDeviceName",playbackPcmDeviceName);
 	jitterBufferSize=configFileSection.retrieveValue<unsigned int>("./jitterBufferSize",jitterBufferSize);
 	}
@@ -712,6 +712,24 @@ void AgoraClient::display(const ProtocolClient::RemoteClientState* rcs,GLContext
 	
 	if(myRcs->theoraDecoder!=0)
 		myRcs->display(contextData);
+	}
+
+}
+
+/****************
+DSO entry points:
+****************/
+
+extern "C" {
+
+Collaboration::ProtocolClient* createObject(Collaboration::ProtocolClientLoader& objectLoader)
+	{
+	return new Collaboration::AgoraClient;
+	}
+
+void destroyObject(Collaboration::ProtocolClient* object)
+	{
+	delete object;
 	}
 
 }

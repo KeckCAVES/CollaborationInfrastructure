@@ -267,3 +267,21 @@ void GrapheinServer::afterServerUpdate(ProtocolServer::ClientState* cs)
 	}
 
 }
+
+/****************
+DSO entry points:
+****************/
+
+extern "C" {
+
+Collaboration::ProtocolServer* createObject(Collaboration::ProtocolServerLoader& objectLoader)
+	{
+	return new Collaboration::GrapheinServer;
+	}
+
+void destroyObject(Collaboration::ProtocolServer* object)
+	{
+	delete object;
+	}
+
+}

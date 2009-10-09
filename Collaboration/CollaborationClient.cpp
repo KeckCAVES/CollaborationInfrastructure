@@ -30,6 +30,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
 #include <Misc/StandardValueCoders.h>
+#include <Misc/CompoundValueCoders.h>
+#include <Misc/ConfigurationFile.h>
 #include <Comm/MulticastPipe.h>
 #include <Geometry/OrthogonalTransformation.h>
 #include <GL/gl.h>
@@ -331,34 +333,33 @@ void* CollaborationClient::communicationThreadMethod(void)
 	return 0;
 	}
 
-CollaborationClient::CollaborationClient(const char* hostname,int portId)
-	:pipe(new CollaborationPipe(hostname,portId,Vrui::openPipe())),
+CollaborationClient::CollaborationClient(const Misc::ConfigurationFileSection& configFileSection)
+	:pipe(new CollaborationPipe(configFileSection.retrieveString("./serverHostName").c_str(),configFileSection.retrieveValue<int>("./serverPortId"),Vrui::openPipe())),
+	 protocolLoader(configFileSection.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
 	 clientHash(17),
 	 followClientIndex(-1),faceClientIndex(-1),
 	 remoteClientDialogPopup(0),clientListRowColumn(0),
 	 fixGlyphScaling(false),renderRemoteEnvironments(false)
 	{
+	typedef std::vector<std::string> StringList;
+	
+	/* Get additional search paths from configuration file section and add them to the object loader: */
+	StringList pluginSearchPaths=configFileSection.retrieveValue<StringList>("./pluginSearchPaths",StringList());
+	for(StringList::const_iterator tspIt=pluginSearchPaths.begin();tspIt!=pluginSearchPaths.end();++tspIt)
+		{
+		/* Add the path: */
+		protocolLoader.getDsoLocator().addPath(*tspIt);
+		}
+	
 	/* Initialize the remote viewer and input device glyphs early: */
 	viewerGlyph.enable(Vrui::Glyph::CROSSBALL,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
 	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
 	
 	/* Load persistent configuration data: */
-	try
-		{
-		/* Open the configuration file: */
-		configFile.load(COLLABORATIONCLIENT_CONFIG_FILE);
-		
-		/* Update all settings: */
-		Misc::ConfigurationFileSection rootSection=configFile.getSection("/");
-		viewerGlyph.configure(rootSection,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
-		inputDeviceGlyph.configure(rootSection,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
-		fixGlyphScaling=rootSection.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
-		renderRemoteEnvironments=rootSection.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
-		}
-	catch(std::runtime_error err)
-		{
-		/* Ignore the error; will use default values for all settings */
-		}
+	viewerGlyph.configure(configFileSection,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
+	inputDeviceGlyph.configure(configFileSection,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
+	fixGlyphScaling=configFileSection.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
+	renderRemoteEnvironments=configFileSection.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
 	
 	/* Initialize the protocol message table to have invalid entries for the collaboration pipe's own messages: */
 	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
@@ -374,6 +375,31 @@ CollaborationClient::CollaborationClient(const char* hostname,int portId)
 	clientListRowColumn->setPacking(GLMotif::RowColumn::PACK_TIGHT);
 	clientListRowColumn->setNumMinorWidgets(3);
 	clientListRowColumn->setColumnWeight(0,1.0f);
+	
+	/* Register all protocols listed in the configuration file section: */
+	StringList protocolNames=configFileSection.retrieveValue<StringList>("./protocols",StringList());
+	for(StringList::const_iterator pnIt=protocolNames.begin();pnIt!=protocolNames.end();++pnIt)
+		{
+		/* Load a protocol plug-in: */
+		try
+			{
+			// DEBUGGING
+			std::cout<<"Registering protocol "<<*pnIt<<"Client"<<std::endl;
+			
+			ProtocolClient* newProtocol=protocolLoader.createObject((*pnIt+"Client").c_str());
+			
+			/* Initialize the protocol plug-in: */
+			Misc::ConfigurationFileSection protocolSection=configFileSection.getSection(pnIt->c_str());
+			newProtocol->initialize(*this,protocolSection);
+			
+			/* Append the new protocol plug-in to the list: */
+			protocols.push_back(newProtocol);
+			}
+		catch(std::runtime_error err)
+			{
+			/* Ignore the error and the protocol: */
+			}
+		}
 	}
 
 CollaborationClient::~CollaborationClient(void)
@@ -406,7 +432,8 @@ CollaborationClient::~CollaborationClient(void)
 	
 	/* Delete all protocol plug-ins: */
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
-		delete *pIt;
+		if(!protocolLoader.isManaged(*pIt))
+			delete *pIt;
 	
 	/* Delete the user interface: */
 	delete remoteClientDialogPopup;
@@ -414,10 +441,6 @@ CollaborationClient::~CollaborationClient(void)
 
 void CollaborationClient::registerProtocol(ProtocolClient* newProtocol)
 	{
-	/* Call the new protocol plug-in's initialization method: */
-	Misc::ConfigurationFileSection protocolSection=configFile.getSection(newProtocol->getName());
-	newProtocol->initialize(*this,protocolSection);
-	
 	/* Store the new protocol plug-in in the list: */
 	protocols.push_back(newProtocol);
 	}

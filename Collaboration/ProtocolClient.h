@@ -30,6 +30,10 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 namespace Misc {
 class ConfigurationFileSection;
 }
+namespace Plugins {
+template <class ManagedClassParam>
+class ObjectLoader;
+}
 class GLContextData;
 namespace Collaboration {
 class CollaborationPipe;
@@ -97,6 +101,12 @@ class ProtocolClient
 	virtual void display(GLContextData& contextData) const; // Hook called during client's display method
 	virtual void display(const RemoteClientState* rcs,GLContextData& contextData) const; // Hook called for each remote client sharing this protocol, during client's display method
 	};
+
+/*****************
+Type declarations:
+*****************/
+
+typedef Plugins::ObjectLoader<ProtocolClient> ProtocolClientLoader;
 
 }
 

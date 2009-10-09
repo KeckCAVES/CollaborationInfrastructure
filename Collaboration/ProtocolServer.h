@@ -27,6 +27,10 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #define PROTOCOLSERVER_INCLUDED
 
 /* Forward declarations: */
+namespace Plugins {
+template <class ManagedClassParam>
+class ObjectLoader;
+}
 namespace Collaboration {
 class CollaborationPipe;
 class CollaborationServer;
@@ -88,6 +92,12 @@ class ProtocolServer
 	virtual void beforeServerUpdate(ClientState* destCs,CollaborationPipe& pipe); // Hook called right before the server sends a state update message to the given client
 	virtual void afterServerUpdate(ClientState* cs); // Hook called after the server completed all update messages to all clients
 	};
+
+/*****************
+Type declarations:
+*****************/
+
+typedef Plugins::ObjectLoader<ProtocolServer> ProtocolServerLoader;
 
 }
 

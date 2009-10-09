@@ -127,6 +127,7 @@ class GrapheinClient:public ProtocolClient,public GrapheinPipe
 	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
 	virtual void sendConnectRequest(CollaborationPipe& pipe);
 	virtual void receiveConnectReply(CollaborationPipe& pipe);
+	virtual void receiveDisconnectReply(CollaborationPipe& pipe);
 	virtual void sendClientUpdate(CollaborationPipe& pipe);
 	virtual RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
 	virtual void receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);

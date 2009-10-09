@@ -42,21 +42,16 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <WorldPointSoupRenderer.h>
 #include <WorldTriangleSoupRenderer.h>
 
-#define EMINEO_USE_ITS_FUSED_RENDERER  0
-#define EMINEO_USE_ITS_PLAIN_RENDERER  0
-#define EMINEO_USE_WPS_PLAIN_RENDERER  0
-#define EMINEO_USE_WTS_FUSED_RENDERER  0
-#define EMINEO_USE_WTS_PLAIN_RENDERER  1
-
 namespace Collaboration {
 
 /************************************************
 Methods of class EmineoClient::RemoteClientState:
 ************************************************/
 
-EmineoClient::RemoteClientState::RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort)
+EmineoClient::RemoteClientState::RemoteClientState(const std::string& sGatewayHostname,int sGatewayPort,int sRendererType)
 	:gatewayHostname(sGatewayHostname),gatewayPort(sGatewayPort),
 	 hasSource(!gatewayHostname.empty()&&gatewayPort>0),
+	 rendererType(sRendererType),
 	 facades(0),renderer(0)
 	{
 	if(hasSource)
@@ -93,21 +88,27 @@ void* EmineoClient::RemoteClientState::initializeEmineoThreadMethod(void)
 		
 		/* Create the renderer: */
 		std::cout<<"EmineoClient: Creating renderer"<<std::endl;
-		#if EMINEO_USE_ITS_FUSED_RENDERER
-		newRenderer=new emineo::FusedRenderer<emineo::ImageTriangleSoup>;
-		#endif
-		#if EMINEO_USE_ITS_PLAIN_RENDERER
-		newRenderer=new emineo::PlainRenderer<emineo::ImageTriangleSoup>;
-		#endif
-		#if EMINEO_USE_WPS_PLAIN_RENDERER
-		newRenderer=new emineo::PlainRenderer<emineo::WorldPointSoup>;
-		#endif
-		#if EMINEO_USE_WTS_FUSED_RENDERER
-		newRenderer=new emineo::FusedRenderer<emineo::WorldTriangleSoup>;
-		#endif
-		#if EMINEO_USE_WTS_PLAIN_RENDERER
-		newRenderer=new emineo::PlainRenderer<emineo::WorldTriangleSoup>;
-		#endif
+		switch(rendererType)
+			{
+			case 0:
+				newRenderer=new emineo::FusedRenderer<emineo::ImageTriangleSoup>;
+				break;
+			
+			case 1:
+				newRenderer=new emineo::PlainRenderer<emineo::ImageTriangleSoup>;
+				break;
+			
+			case 2:
+				newRenderer=new emineo::PlainRenderer<emineo::WorldPointSoup>;
+				break;
+			
+			case 3:
+				newRenderer=new emineo::PlainRenderer<emineo::WorldPointSoup>;
+				break;
+			
+			default:
+				newRenderer=new emineo::PlainRenderer<emineo::WorldTriangleSoup>;
+			}
 		
 		std::cout<<"EmineoClient: Binding renderer to facade group"<<std::endl;
 		newRenderer->bindFacadeGroup(newFacades);
@@ -145,7 +146,7 @@ Methods of class EmineoClient:
 *****************************/
 
 EmineoClient::EmineoClient(void)
-	:gatewayHostname(""),gatewayPort(-1),hasSource(false)
+	:gatewayHostname(""),gatewayPort(-1),hasSource(false),rendererType(4)
 	{
 	}
 
@@ -161,10 +162,11 @@ const char* EmineoClient::getName(void) const
 void EmineoClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
 	{
 	/* Read all relevant settings: */
-	gatewayHostname=configFileSection.retrieveValue<std::string>("gatewayHostname",gatewayHostname);
+	gatewayHostname=configFileSection.retrieveString("./gatewayHostname",gatewayHostname);
 	gatewayPort=configFileSection.retrieveValue<int>("./gatewayPort",gatewayPort);
 	hasSource=gatewayHostname!=""&&gatewayPort>0;
-	cameraTransformation=configFileSection.retrieveValue<OGTransform>("cameraTransformation",cameraTransformation);
+	rendererType=configFileSection.retrieveValue<int>("./rendererType",rendererType);
+	cameraTransformation=configFileSection.retrieveValue<OGTransform>("./cameraTransformation",cameraTransformation);
 	
 	if(hasSource)
 		std::cout<<"EmineoClient::initialize: Offering 3D video on gateway "<<gatewayHostname<<", port "<<gatewayPort<<std::endl;
@@ -199,7 +201,7 @@ EmineoClient::RemoteClientState* EmineoClient::receiveClientConnect(Collaboratio
 	int remoteGatewayPort=pipe.read<int>();
 	
 	/* Create a new remote client state object, connecting to the remote client's 3D video gateway: */
-	return new RemoteClientState(remoteGatewayHostname,remoteGatewayPort);
+	return new RemoteClientState(remoteGatewayHostname,remoteGatewayPort,rendererType);
 	}
 
 void EmineoClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)

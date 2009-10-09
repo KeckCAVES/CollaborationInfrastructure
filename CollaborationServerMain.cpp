@@ -25,13 +25,10 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <signal.h>
 #include <iostream>
 #include <Misc/Time.h>
+#include <Misc/StandardValueCoders.h>
+#include <Misc/ConfigurationFile.h>
 
 #include <Collaboration/CollaborationServer.h>
-
-#include <Collaboration/FooServer.h>
-#include <Collaboration/AgoraServer.h>
-#include <Collaboration/EmineoServer.h>
-#include <Collaboration/GrapheinServer.h>
 
 volatile bool runServerLoop=true;
 
@@ -42,9 +39,14 @@ void termSignalHandler(int)
 
 int main(int argc,char* argv[])
 	{
+	/* Open the server configuration file: */
+	Misc::ConfigurationFile configFile(COLLABORATION_CONFIGFILENAME);
+	
+	/* Go to the server section: */
+	Misc::ConfigurationFileSection cfg=configFile.getSection("/CollaborationServer");
+	
 	/* Parse the command line: */
-	int listenPortId=0;
-	Misc::Time tickTime(0.02); // Server update time interval in seconds
+	Misc::Time tickTime(cfg.retrieveValue<double>("./tickTime",0.02)); // Server update time interval in seconds
 	for(int i=1;i<argc;++i)
 		{
 		if(argv[i][0]=='-')
@@ -53,7 +55,10 @@ int main(int argc,char* argv[])
 				{
 				++i;
 				if(i<argc)
-					listenPortId=atoi(argv[i]);
+					{
+					/* Override the listen port ID in the configuration file section: */
+					cfg.storeValue<int>("./listenPortId",atoi(argv[i]));
+					}
 				else
 					std::cerr<<"CollaborationServerMain: ignored dangling -port option"<<std::endl;
 				}
@@ -76,20 +81,8 @@ int main(int argc,char* argv[])
 	sigaction(SIGPIPE,&sigPipeAction,0);
 	
 	/* Create the collaboration server object: */
-	Collaboration::CollaborationServer server(listenPortId);
+	Collaboration::CollaborationServer server(cfg);
 	std::cout<<"CollaborationServerMain: Started server on port "<<server.getListenPortId()<<std::endl;
-	
-	/* Add a Foo protocol object: */
-	server.registerProtocol(new Collaboration::FooServer);
-	
-	/* Add an Agora protocol object: */
-	server.registerProtocol(new Collaboration::AgoraServer);
-	
-	/* Add an Emineo protocol object: */
-	server.registerProtocol(new Collaboration::EmineoServer);
-	
-	/* Add a Graphein protocol object: */
-	server.registerProtocol(new Collaboration::GrapheinServer);
 	
 	/* Reroute SIG_INT signals to cleanly shut down multiplexer: */
 	struct sigaction sigIntAction;

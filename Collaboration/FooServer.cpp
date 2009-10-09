@@ -283,3 +283,21 @@ void FooServer::afterServerUpdate(ProtocolServer::ClientState* cs)
 	}
 
 }
+
+/****************
+DSO entry points:
+****************/
+
+extern "C" {
+
+Collaboration::ProtocolServer* createObject(Collaboration::ProtocolServerLoader& objectLoader)
+	{
+	return new Collaboration::FooServer;
+	}
+
+void destroyObject(Collaboration::ProtocolServer* object)
+	{
+	delete object;
+	}
+
+}

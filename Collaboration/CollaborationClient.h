@@ -28,7 +28,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string>
 #include <vector>
 #include <Misc/HashTable.h>
-#include <Misc/ConfigurationFile.h>
+#include <Plugins/ObjectLoader.h>
 #include <Threads/Thread.h>
 #include <Threads/Mutex.h>
 #include <Threads/TripleBuffer.h>
@@ -40,6 +40,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Collaboration/ProtocolClient.h>
 
 /* Forward declarations: */
+namespace Misc {
+class ConfigurationFileSection;
+}
 class GLContextData;
 namespace GLMotif {
 class PopupWindow;
@@ -130,8 +133,8 @@ class CollaborationClient
 	/* Elements: */
 	protected:
 	CollaborationPipe* pipe; // Pipe connected to the collaboration server
-	Misc::ConfigurationFile configFile; // Configuration file for the collaboration client and all protocol plug-ins
 	private:
+	ProtocolClientLoader protocolLoader; // Object loader to dynamically load protocol plug-ins from DSOs
 	Threads::Thread communicationThread; // Thread handling communication with the collaboration server
 	ProtocolList protocols; // List of protocols currently registered with the server
 	std::vector<ProtocolClient*> messageTable; // Table mapping from message IDs to the protocol engines handling them
@@ -164,7 +167,7 @@ class CollaborationClient
 	
 	/* Constructors and destructors: */
 	public:
-	CollaborationClient(const char* hostname,int portId); // Opens a connection to the given collaboration server under the given display name
+	CollaborationClient(const Misc::ConfigurationFileSection& configFileSection); // Opens a connection to a collaboration server using settings from the configuration file section
 	private:
 	CollaborationClient(const CollaborationClient& source); // Prohibit copy constructor
 	CollaborationClient& operator=(const CollaborationClient& source); // Prohibit assignment operator
