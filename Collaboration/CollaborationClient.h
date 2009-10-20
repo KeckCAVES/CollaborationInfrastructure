@@ -28,6 +28,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string>
 #include <vector>
 #include <Misc/HashTable.h>
+#include <Misc/ConfigurationFile.h>
 #include <Plugins/ObjectLoader.h>
 #include <Threads/Thread.h>
 #include <Threads/Mutex.h>
@@ -40,9 +41,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Collaboration/ProtocolClient.h>
 
 /* Forward declarations: */
-namespace Misc {
-class ConfigurationFileSection;
-}
 class GLContextData;
 namespace GLMotif {
 class PopupWindow;
@@ -54,6 +52,25 @@ namespace Collaboration {
 class CollaborationClient
 	{
 	/* Embedded classes: */
+	public:
+	class Configuration // Class to configure a collaboration server
+		{
+		friend class CollaborationClient;
+		
+		/* Elements: */
+		private:
+		Misc::ConfigurationFile configFile; // The collaboration infrastructure's configuration file
+		Misc::ConfigurationFileSection cfg; // The client's configuration section
+		
+		/* Constructors and destructors: */
+		public:
+		Configuration(void); // Creates a configuration by reading the collaboration infrastructure's configuration file
+		
+		/* Methods: */
+		void setServer(std::string newServerHostName,int newServerPortId); // Sets to which server to connect
+		void setClientName(std::string newClientName); // Sets the name under which the client connects to the server
+		};
+	
 	private:
 	typedef std::vector<ProtocolClient*> ProtocolList; // Type for lists of client protocol plug-ins
 	typedef ProtocolClient::RemoteClientState ProtocolRemoteClientState; // Type for protocol-specific states of remote clients
@@ -131,10 +148,12 @@ class CollaborationClient
 		};
 	
 	/* Elements: */
+	private:
+	Configuration* configuration; // Pointer to the client's configuration object
+	ProtocolClientLoader protocolLoader; // Object loader to dynamically load protocol plug-ins from DSOs
 	protected:
 	CollaborationPipe* pipe; // Pipe connected to the collaboration server
 	private:
-	ProtocolClientLoader protocolLoader; // Object loader to dynamically load protocol plug-ins from DSOs
 	Threads::Thread communicationThread; // Thread handling communication with the collaboration server
 	ProtocolList protocols; // List of protocols currently registered with the server
 	std::vector<ProtocolClient*> messageTable; // Table mapping from message IDs to the protocol engines handling them
@@ -167,7 +186,7 @@ class CollaborationClient
 	
 	/* Constructors and destructors: */
 	public:
-	CollaborationClient(const Misc::ConfigurationFileSection& configFileSection); // Opens a connection to a collaboration server using settings from the configuration file section
+	CollaborationClient(Configuration* sConfiguration =0); // Opens a connection to a collaboration server using settings from the configuration object
 	private:
 	CollaborationClient(const CollaborationClient& source); // Prohibit copy constructor
 	CollaborationClient& operator=(const CollaborationClient& source); // Prohibit assignment operator
@@ -175,12 +194,13 @@ class CollaborationClient
 	virtual ~CollaborationClient(void); // Disconnects from the collaboration server
 	
 	/* Methods: */
+	virtual void registerProtocol(ProtocolClient* newProtocol); // Registers a new protocol with the client; must be called before connect()
 	CollaborationPipe* getPipe(void) // Returns pointer to the client's collaboration pipe
 		{
 		return pipe;
 		}
-	virtual void registerProtocol(ProtocolClient* newProtocol); // Registers a new protocol with the client; must be called before connect()
-	virtual void connect(const char* clientName); // Runs the connection initiation protocol; throws exception if fails
+	virtual void connect(void); // Runs the connection initiation protocol; throws exception if fails
+	ProtocolClient* getProtocol(const char* protocolName); // Returns a pointer to a protocol client; returns 0 if protocol does not exist
 	Vrui::Glyph& getViewerGlyph(void) // Returns the glyph used to display remote viewers
 		{
 		return viewerGlyph;

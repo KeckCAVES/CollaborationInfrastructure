@@ -28,6 +28,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <utility>
 #include <string>
 #include <vector>
+#include <Misc/ConfigurationFile.h>
 #include <Plugins/ObjectLoader.h>
 #include <Threads/Thread.h>
 #include <Threads/Mutex.h>
@@ -37,16 +38,30 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Collaboration/CollaborationPipe.h>
 #include <Collaboration/ProtocolServer.h>
 
-/* Forward declarations: */
-namespace Misc {
-class ConfigurationFileSection;
-}
-
 namespace Collaboration {
 
 class CollaborationServer
 	{
 	/* Embedded classes: */
+	public:
+	class Configuration // Class to configure a collaboration server
+		{
+		friend class CollaborationServer;
+		
+		/* Elements: */
+		private:
+		Misc::ConfigurationFile configFile; // The collaboration infrastructure's configuration file
+		Misc::ConfigurationFileSection cfg; // The server's configuration section
+		
+		/* Constructors and destructors: */
+		public:
+		Configuration(void); // Creates a configuration by reading the collaboration infrastructure's configuration file
+		
+		/* Methods: */
+		void setListenPortId(int newListenPortId); // Overrides the default server listening port ID
+		double getTickTime(void); // Returns server loop's tick time in seconds
+		};
+	
 	private:
 	typedef std::vector<ProtocolServer*> ProtocolList; // Type for lists of server protocol plug-ins
 	typedef ProtocolServer::ClientState ProtocolClientState; // Type for protocol-specific client states
@@ -127,6 +142,7 @@ class CollaborationServer
 	
 	/* Elements: */
 	private:
+	Configuration* configuration; // Pointer to the server's configuration object
 	ProtocolServerLoader protocolLoader; // Object loader to dynamically load protocol plug-ins requested by clients
 	Comm::TCPSocket listenSocket; // Socket receiving connection requests from clients
 	Threads::Thread listenThread; // Thread receiving connection request messages
@@ -144,7 +160,7 @@ class CollaborationServer
 	
 	/* Constructors and destructors: */
 	public:
-	CollaborationServer(const Misc::ConfigurationFileSection& configFileSection); // Creates a server object listening on the given port ID
+	CollaborationServer(Configuration* sConfiguration =0); // Creates a server object with the given configuration
 	virtual ~CollaborationServer(void);
 	
 	/* Methods: */

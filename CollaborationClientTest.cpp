@@ -25,8 +25,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string.h>
 #include <stdlib.h>
 #include <iostream>
-#include <Misc/StandardValueCoders.h>
-#include <Misc/ConfigurationFile.h>
 #include <Vrui/Vrui.h>
 #include <Vrui/Application.h>
 
@@ -52,45 +50,35 @@ CollaborationClientTest::CollaborationClientTest(int& argc,char**& argv,char**& 
 	:Vrui::Application(argc,argv,appDefaults),
 	 collaborationClient(0)
 	{
-	/* Open the client configuration file: */
-	Misc::ConfigurationFile configFile(COLLABORATION_CONFIGFILENAME);
-	
-	/* Go to the client section: */
-	Misc::ConfigurationFileSection cfg=configFile.getSection("/CollaborationClient");
+	/* Create a configuration object: */
+	Collaboration::CollaborationClient::Configuration* cfg=new Collaboration::CollaborationClient::Configuration;
 	
 	/* Parse the command line: */
-	const char* clientNameS=getenv("HOSTNAME");
-	if(clientNameS==0)
-		clientNameS=getenv("HOST");
-	if(clientNameS==0)
-		clientNameS="Anonymous Coward";
-	std::string clientName=cfg.retrieveString("./clientName",clientNameS);
 	for(int i=1;i<argc;++i)
 		{
 		if(argv[i][0]=='-')
 			{
-			if(strcasecmp(argv[i]+1,"fix")==0)
-				cfg.storeValue<bool>("./fixRemoteGlyphScaling",true);
-			else if(strcasecmp(argv[i]+1,"nofix")==0)
-				cfg.storeValue<bool>("./fixRemoteGlyphScaling",false);
-			else if(strcasecmp(argv[i]+1,"remote")==0)
-				cfg.storeValue<bool>("./renderRemoteEnvironments",true);
-			else if(strcasecmp(argv[i]+1,"noremote")==0)
-				cfg.storeValue<bool>("./renderRemoteEnvironments",false);
-			else if(strcasecmp(argv[i]+1,"server")==0)
+			if(strcasecmp(argv[i]+1,"server")==0)
 				{
 				++i;
-				cfg.storeString("./serverHostName",argv[i]);
-				}
-			else if(strcasecmp(argv[i]+1,"port")==0)
-				{
-				++i;
-				cfg.storeValue<int>("./serverPortId",atoi(argv[i]));
+				
+				/* Split the server name into host name and port ID: */
+				char* colonPtr=0;
+				for(char* sPtr=argv[i];*sPtr!='\0';++sPtr)
+					if(*sPtr==':')
+						colonPtr=sPtr;
+				if(colonPtr!=0)
+					cfg->setServer(std::string(argv[i],colonPtr),atoi(colonPtr+1));
+				else
+					{
+					/* Use the default port: */
+					cfg->setServer(argv[i],26000);
+					}
 				}
 			else if(strcasecmp(argv[i]+1,"name")==0)
 				{
 				++i;
-				clientName=argv[i];
+				cfg->setClientName(argv[i]);
 				}
 			}
 		}
@@ -99,7 +87,7 @@ CollaborationClientTest::CollaborationClientTest(int& argc,char**& argv,char**& 
 	collaborationClient=new Collaboration::CollaborationClient(cfg);
 	
 	/* Initiate the collaboration protocol: */
-	collaborationClient->connect(clientName.c_str());
+	collaborationClient->connect();
 	
 	/* Initialize the navigation transformation: */
 	Vrui::setNavigationTransformation(Vrui::Point(0.0,0.0,0.0),Vrui::Scalar(1.5),Vrui::Vector(0.0,0.0,1.0));

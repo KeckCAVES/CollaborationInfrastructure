@@ -25,8 +25,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <signal.h>
 #include <iostream>
 #include <Misc/Time.h>
-#include <Misc/StandardValueCoders.h>
-#include <Misc/ConfigurationFile.h>
 
 #include <Collaboration/CollaborationServer.h>
 
@@ -39,14 +37,11 @@ void termSignalHandler(int)
 
 int main(int argc,char* argv[])
 	{
-	/* Open the server configuration file: */
-	Misc::ConfigurationFile configFile(COLLABORATION_CONFIGFILENAME);
-	
-	/* Go to the server section: */
-	Misc::ConfigurationFileSection cfg=configFile.getSection("/CollaborationServer");
+	/* Create a new configuration object: */
+	Collaboration::CollaborationServer::Configuration* cfg=new Collaboration::CollaborationServer::Configuration;
 	
 	/* Parse the command line: */
-	Misc::Time tickTime(cfg.retrieveValue<double>("./tickTime",0.02)); // Server update time interval in seconds
+	Misc::Time tickTime(cfg->getTickTime()); // Server update time interval in seconds
 	for(int i=1;i<argc;++i)
 		{
 		if(argv[i][0]=='-')
@@ -57,7 +52,7 @@ int main(int argc,char* argv[])
 				if(i<argc)
 					{
 					/* Override the listen port ID in the configuration file section: */
-					cfg.storeValue<int>("./listenPortId",atoi(argv[i]));
+					cfg->setListenPortId(atoi(argv[i]));
 					}
 				else
 					std::cerr<<"CollaborationServerMain: ignored dangling -port option"<<std::endl;

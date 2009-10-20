@@ -31,7 +31,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Misc/ThrowStdErr.h>
 #include <Misc/StandardValueCoders.h>
 #include <Misc/CompoundValueCoders.h>
-#include <Misc/ConfigurationFile.h>
 #include <Comm/MulticastPipe.h>
 #include <Geometry/OrthogonalTransformation.h>
 #include <GL/gl.h>
@@ -45,6 +44,27 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Vrui/Vrui.h>
 
 namespace Collaboration {
+
+/***************************************************
+Methods of class CollaborationClient::Configuration:
+***************************************************/
+
+CollaborationClient::Configuration::Configuration(void)
+	:configFile(COLLABORATION_CONFIGFILENAME),
+	 cfg(configFile.getSection("/CollaborationClient"))
+	{
+	}
+
+void CollaborationClient::Configuration::setServer(std::string newServerHostName,int newServerPortId)
+	{
+	cfg.storeString("./serverHostName",newServerHostName);
+	cfg.storeValue<int>("./serverPortId",newServerPortId);
+	}
+
+void CollaborationClient::Configuration::setClientName(std::string newClientName)
+	{
+	cfg.storeString("./clientName",newClientName);
+	}
 
 /********************************************
 Methods of class CollaborationClient::Client:
@@ -333,9 +353,10 @@ void* CollaborationClient::communicationThreadMethod(void)
 	return 0;
 	}
 
-CollaborationClient::CollaborationClient(const Misc::ConfigurationFileSection& configFileSection)
-	:pipe(new CollaborationPipe(configFileSection.retrieveString("./serverHostName").c_str(),configFileSection.retrieveValue<int>("./serverPortId"),Vrui::openPipe())),
-	 protocolLoader(configFileSection.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
+CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sConfiguration)
+	:configuration(sConfiguration!=0?sConfiguration:new Configuration),
+	 protocolLoader(configuration->cfg.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
+	 pipe(new CollaborationPipe(configuration->cfg.retrieveString("./serverHostName").c_str(),configuration->cfg.retrieveValue<int>("./serverPortId"),Vrui::openPipe())),
 	 clientHash(17),
 	 followClientIndex(-1),faceClientIndex(-1),
 	 remoteClientDialogPopup(0),clientListRowColumn(0),
@@ -344,7 +365,7 @@ CollaborationClient::CollaborationClient(const Misc::ConfigurationFileSection& c
 	typedef std::vector<std::string> StringList;
 	
 	/* Get additional search paths from configuration file section and add them to the object loader: */
-	StringList pluginSearchPaths=configFileSection.retrieveValue<StringList>("./pluginSearchPaths",StringList());
+	StringList pluginSearchPaths=configuration->cfg.retrieveValue<StringList>("./pluginSearchPaths",StringList());
 	for(StringList::const_iterator tspIt=pluginSearchPaths.begin();tspIt!=pluginSearchPaths.end();++tspIt)
 		{
 		/* Add the path: */
@@ -356,10 +377,10 @@ CollaborationClient::CollaborationClient(const Misc::ConfigurationFileSection& c
 	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
 	
 	/* Load persistent configuration data: */
-	viewerGlyph.configure(configFileSection,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
-	inputDeviceGlyph.configure(configFileSection,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
-	fixGlyphScaling=configFileSection.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
-	renderRemoteEnvironments=configFileSection.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
+	viewerGlyph.configure(configuration->cfg,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
+	inputDeviceGlyph.configure(configuration->cfg,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
+	fixGlyphScaling=configuration->cfg.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
+	renderRemoteEnvironments=configuration->cfg.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
 	
 	/* Initialize the protocol message table to have invalid entries for the collaboration pipe's own messages: */
 	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
@@ -377,7 +398,7 @@ CollaborationClient::CollaborationClient(const Misc::ConfigurationFileSection& c
 	clientListRowColumn->setColumnWeight(0,1.0f);
 	
 	/* Register all protocols listed in the configuration file section: */
-	StringList protocolNames=configFileSection.retrieveValue<StringList>("./protocols",StringList());
+	StringList protocolNames=configuration->cfg.retrieveValue<StringList>("./protocols",StringList());
 	for(StringList::const_iterator pnIt=protocolNames.begin();pnIt!=protocolNames.end();++pnIt)
 		{
 		/* Load a protocol plug-in: */
@@ -389,7 +410,7 @@ CollaborationClient::CollaborationClient(const Misc::ConfigurationFileSection& c
 			ProtocolClient* newProtocol=protocolLoader.createObject((*pnIt+"Client").c_str());
 			
 			/* Initialize the protocol plug-in: */
-			Misc::ConfigurationFileSection protocolSection=configFileSection.getSection(pnIt->c_str());
+			Misc::ConfigurationFileSection protocolSection=configuration->cfg.getSection(pnIt->c_str());
 			newProtocol->initialize(*this,protocolSection);
 			
 			/* Append the new protocol plug-in to the list: */
@@ -437,6 +458,9 @@ CollaborationClient::~CollaborationClient(void)
 	
 	/* Delete the user interface: */
 	delete remoteClientDialogPopup;
+	
+	/* Delete the configuration object: */
+	delete configuration;
 	}
 
 void CollaborationClient::registerProtocol(ProtocolClient* newProtocol)
@@ -445,14 +469,22 @@ void CollaborationClient::registerProtocol(ProtocolClient* newProtocol)
 	protocols.push_back(newProtocol);
 	}
 
-void CollaborationClient::connect(const char* clientName)
+void CollaborationClient::connect(void)
 	{
+	/* Retrieve the client name: */
+	const char* clientNameS=getenv("HOSTNAME");
+	if(clientNameS==0)
+		clientNameS=getenv("HOST");
+	if(clientNameS==0)
+		clientNameS="Anonymous Coward";
+	std::string clientName=configuration->cfg.retrieveString("./clientName",clientNameS);
+	
 	/* Send the connection initiation message: */
 	{
 	Threads::Mutex::Lock pipeLock(pipe->getMutex());
 	
 	pipe->writeMessage(CollaborationPipe::CONNECT_REQUEST);
-	pipe->write<std::string>(std::string(clientName));
+	pipe->write<std::string>(clientName);
 	
 	/* Write names and message payloads of all registered protocols: */
 	pipe->write<unsigned int>(protocols.size());
@@ -543,6 +575,18 @@ void CollaborationClient::connect(const char* clientName)
 	
 	/* Start server communication thread: */
 	communicationThread.start(this,&CollaborationClient::communicationThreadMethod);
+	}
+
+ProtocolClient* CollaborationClient::getProtocol(const char* protocolName)
+	{
+	ProtocolClient* result=0;
+	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
+		if(strcmp((*pIt)->getName(),protocolName)==0)
+			{
+			result=*pIt;
+			break;
+			}
+	return result;
 	}
 
 void CollaborationClient::setFixGlyphScaling(bool enable)

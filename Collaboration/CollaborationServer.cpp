@@ -29,9 +29,28 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Misc/ThrowStdErr.h>
 #include <Misc/StandardValueCoders.h>
 #include <Misc/CompoundValueCoders.h>
-#include <Misc/ConfigurationFile.h>
 
 namespace Collaboration {
+
+/***************************************************
+Methods of class CollaborationServer::Configuration:
+***************************************************/
+
+CollaborationServer::Configuration::Configuration(void)
+	:configFile(COLLABORATION_CONFIGFILENAME),
+	 cfg(configFile.getSection("/CollaborationServer"))
+	{
+	}
+
+void CollaborationServer::Configuration::setListenPortId(int newListenPortId)
+	{
+	cfg.storeValue<int>("./listenPortId",newListenPortId);
+	}
+
+double CollaborationServer::Configuration::getTickTime(void)
+	{
+	return cfg.retrieveValue<double>("./tickTime",0.02);
+	}
 
 /******************************************************
 Methods of class CollaborationServer::ClientConnection:
@@ -516,15 +535,16 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 	return 0;
 	}
 
-CollaborationServer::CollaborationServer(const Misc::ConfigurationFileSection& configFileSection)
-	:protocolLoader(configFileSection.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
-	 listenSocket(configFileSection.retrieveValue<int>("./listenPortId",-1),0),
+CollaborationServer::CollaborationServer(CollaborationServer::Configuration* sConfiguration)
+	:configuration(sConfiguration!=0?sConfiguration:new Configuration),
+	 protocolLoader(configuration->cfg.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
+	 listenSocket(configuration->cfg.retrieveValue<int>("./listenPortId",-1),0),
 	 nextClientID(0)
 	{
 	typedef std::vector<std::string> StringList;
 	
 	/* Get additional search paths from configuration file section and add them to the object loader: */
-	StringList pluginSearchPaths=configFileSection.retrieveValue<StringList>("./pluginSearchPaths",StringList());
+	StringList pluginSearchPaths=configuration->cfg.retrieveValue<StringList>("./pluginSearchPaths",StringList());
 	for(StringList::const_iterator tspIt=pluginSearchPaths.begin();tspIt!=pluginSearchPaths.end();++tspIt)
 		{
 		/* Add the path: */
@@ -572,6 +592,9 @@ CollaborationServer::~CollaborationServer(void)
 		if(!protocolLoader.isManaged(*pIt))
 			delete *pIt;
 		}
+	
+	/* Delete the configuration object: */
+	delete configuration;
 	}
 
 void CollaborationServer::registerProtocol(ProtocolServer* newProtocol)

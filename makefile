@@ -30,13 +30,6 @@ PACKAGEROOT := $(shell pwd)
 # an extension of Vrui itself.
 VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-066
 
-# Set this to 0 to disable Emineo support (say, if you don't have the
-# required Emineo package, for instance):
-COLLABORATIONCLIENT_USE_EMINEO = 0
-
-# Emineo package root directory.
-EMINEOPACKAGEROOT := $(HOME)/src/Emineo
-
 # Include definitions for the system environment
 include $(VRUIPACKAGEROOT)/BuildRoot/SystemDefinitions
 include $(VRUIPACKAGEROOT)/BuildRoot/Packages
@@ -121,20 +114,9 @@ THEORA_INCLUDE =
 THEORA_LIBDIR  = 
 THEORA_LIBS    = -ltheora
 
-# Package definition for Emineo rendering architecture:
-EMINEO_BASEDIR = $(EMINEOPACKAGEROOT)
-EMINEO_DEPENDS = MYVRUI
-EMINEO_INCLUDE = -I$(EMINEOPACKAGEROOT)/include
-EMINEO_LIBDIR  = -L$(EMINEOPACKAGEROOT)/build
-EMINEO_LIBS    = -lEmineoRenderer.$(LDEXT)
-EMINEO_LINKLIBFLAGS = -Wl,-rpath $(EMINEOPACKAGEROOT)/build
-
 # Package definition for Vrui collaboration infrastructure:
 MYCOLLABORATION_BASEDIR     = $(PACKAGEROOT)
-MYCOLLABORATION_DEPENDS     = MYVRUI THEORA SPEEX
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  MYCOLLABORATION_DEPENDS  += EMINEO
-endif
+MYCOLLABORATION_DEPENDS     = MYVRUI
 MYCOLLABORATION_INCLUDE     = -I$(MYCOLLABORATION_BASEDIR)
 MYCOLLABORATION_LIBDIR      = -L$(MYCOLLABORATION_BASEDIR)/$(MYLIBEXT)
 MYCOLLABORATION_LIBS        = -lCollaboration.$(LDEXT)
@@ -185,11 +167,7 @@ PLUGIN_NAMES = FooServer \
                AgoraServer \
                AgoraClient \
                GrapheinServer \
-               GrapheinClient \
-               EmineoServer
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  PLUGIN_NAMES += EmineoClient
-endif
+               GrapheinClient
 
 PLUGINS += $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
 
@@ -204,14 +182,6 @@ EXECUTABLES += $(EXEDIR)/CollaborationServer
 #
 
 EXECUTABLES += $(EXEDIR)/CollaborationClientTest
-
-#
-# The Emineo test program:
-#
-
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-  EXECUTABLES += $(EXEDIR)/EmineoTest
-endif
 
 ALL = $(LIBRARIES) $(PLUGINS) $(EXECUTABLES)
 
@@ -229,12 +199,6 @@ $(PLUGINS) $(EXECUTABLES): $(call LIBRARYNAME,libCollaboration)
 config:
 	@echo "---- Configured Vrui collaboration infrastructure options: ----"
 	@echo "Vrui package root directory: $(VRUIPACKAGEROOT)"
-ifneq ($(COLLABORATIONCLIENT_USE_EMINEO),0)
-	@echo "3D video support (Emineo) enabled"
-	@echo "Emineo package root directory: $(EMINEOPACKAGEROOT)"
-else
-	@echo "3D video support (Emineo) disabled"
-endif
 ifneq ($(GLSUPPORT_USE_TLS),0)
 	@echo "Multithreaded rendering enabled"
 else
@@ -288,7 +252,9 @@ COLLABORATION_SOURCES = Collaboration/CollaborationPipe.cpp \
                         Collaboration/ProtocolClient.cpp
 
 $(OBJDIR)/Collaboration/CollaborationServer.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/lib%s.$(PLUGINFILEEXT)"'
+$(OBJDIR)/Collaboration/CollaborationServer.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
 $(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/lib%s.$(PLUGINFILEEXT)"'
+$(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
 
 $(call LIBRARYNAME,libCollaboration): PACKAGES += $(MYCOLLABORATION_DEPENDS)
 $(call LIBRARYNAME,libCollaboration): EXTRACINCLUDEFLAGS += $(MYCOLLABORATION_INCLUDE)
@@ -321,7 +287,7 @@ $(call PLUGINNAME,GrapheinClient): $(OBJDIR)/Collaboration/GrapheinPipe.o \
 $(call PLUGINNAME,AgoraServer): $(OBJDIR)/Collaboration/AgoraPipe.o \
                                 $(OBJDIR)/Collaboration/AgoraServer.o
 
-$(call PLUGINNAME,AgoraClient): PACKAGES += THEORA SPEEX
+$(call PLUGINNAME,AgoraClient): PACKAGES += THEORA OGG SPEEX
 $(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
                                 $(OBJDIR)/Collaboration/SpeexDecoder.o \
                                 $(OBJDIR)/Collaboration/V4L2VideoDevice.o \
@@ -335,8 +301,6 @@ $(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
 # The collaboration server test program:
 #
 
-$(OBJDIR)/CollaborationServerMain.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
-
 $(EXEDIR)/CollaborationServer: PACKAGES += MYCOLLABORATION
 $(EXEDIR)/CollaborationServer: $(OBJDIR)/CollaborationServerMain.o
 .PHONY: CollaborationServer
@@ -346,21 +310,10 @@ CollaborationServer: $(EXEDIR)/CollaborationServer
 # The collaboration client test program:
 #
 
-$(OBJDIR)/CollaborationClientTest.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
-
 $(EXEDIR)/CollaborationClientTest: PACKAGES += MYCOLLABORATION
 $(EXEDIR)/CollaborationClientTest: $(OBJDIR)/CollaborationClientTest.o
 .PHONY: CollaborationClientTest
 CollaborationClientTest: $(EXEDIR)/CollaborationClientTest
-
-#
-# The Emineo test program:
-#
-
-$(EXEDIR)/EmineoTest: PACKAGES += EMINEO
-$(EXEDIR)/EmineoTest: $(OBJDIR)/EmineoTest.o
-.PHONY: EmineoTest
-EmineoTest: $(EXEDIR)/EmineoTest
 
 ########################################################################
 # Specify installation rules for header files, libraries, executables,

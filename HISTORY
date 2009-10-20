@@ -14,3 +14,10 @@ CollaborationInfrastructure-1.2:
   before client class is deleted.
 - Added option to uninstall collaboration infrastructure to makefile.
 - Bumped required Vrui version to 1.0-066.
+- Removed Emineo protocol from package, since it will be provided by the
+  Emineo package itself.
+
+CollaborationInfrastructure-1.3:
+- Changed initialization of collaboration client and server objects to
+  accept a Configuration object, with methods to change important
+  settings.
