@@ -23,6 +23,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/SpeexEncoder.h>
 
+// DEBUGGING
+#include <iostream>
 #include <Sound/SoundDataFormat.h>
 
 namespace Collaboration {
@@ -41,7 +43,11 @@ void* SpeexEncoder::encodingThreadMethod(void)
 		/* Read raw audio data from the recording PCM device: */
 		size_t numFrames=read(recordingBuffer,speexFrameSize);
 		if(numFrames!=speexFrameSize) // Untreatable error; need to bail out
+			{
+			// DEBUGGING
+			std::cerr<<"SpeexEncoder: Error while reading from sound device; received "<<numFrames<<" frames instead of "<<speexFrameSize<<std::endl;
 			break;
+			}
 		
 		/* Encode the raw audio data into the SPEEX bit packer: */
 		if(speex_encode_int(speexState,recordingBuffer,&speexBits)<0)
@@ -89,7 +95,9 @@ SpeexEncoder::SpeexEncoder(const char* recordingPCMDeviceName,size_t sPacketQueu
 		recordingBuffer=new signed short int[speexFrameSize];
 		
 		/* Set the recording device's fragment size: */
-		setBufferSize(speexFrameSize*8,speexFrameSize);
+		if(sPacketQueueSize<4)
+			sPacketQueueSize=4;
+		setBufferSize(speexFrameSize*sPacketQueueSize,speexFrameSize);
 		
 		/* Initialize the SPEEX bit packer: */
 		speex_bits_init(&speexBits);

@@ -147,7 +147,9 @@ void* CollaborationClient::communicationThreadMethod(void)
 					newClient->clientID=pipe->read<unsigned int>();
 					newClient->name=pipe->read<std::string>();
 					
+					#ifdef VERBOSE
 					std::cout<<"CollaborationClient: Connecting new remote client "<<newClient->clientID<<", name "<<newClient->name<<std::endl;
+					#endif
 					
 					/* Receive the list of protocols shared with the remote client, and let the plug-ins read their message payloads: */
 					unsigned int numProtocols=pipe->read<unsigned int>();
@@ -156,9 +158,6 @@ void* CollaborationClient::communicationThreadMethod(void)
 						/* Read the protocol index and get the protocol plug-in: */
 						unsigned int protocolIndex=pipe->read<unsigned int>();
 						ProtocolClient* protocol=protocols[protocolIndex];
-						
-						// DEBUGGING
-						std::cout<<"CollaborationClient: Shared protocol "<<protocol->getName()<<std::endl;
 						
 						/* Let the protocol plug-in read its message payload: */
 						ProtocolRemoteClientState* prcs=protocol->receiveClientConnect(*pipe);
@@ -404,9 +403,6 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 		/* Load a protocol plug-in: */
 		try
 			{
-			// DEBUGGING
-			std::cout<<"Registering protocol "<<*pnIt<<"Client"<<std::endl;
-			
 			ProtocolClient* newProtocol=protocolLoader.createObject((*pnIt+"Client").c_str());
 			
 			/* Initialize the protocol plug-in: */
@@ -612,7 +608,9 @@ void CollaborationClient::frame(void)
 				{
 				Client* client=alIt->client;
 				
+				#ifdef VERBOSE
 				std::cout<<"Adding new remote client "<<client->name<<", ID "<<alIt->clientID<<std::endl;
+				#endif
 				
 				/* Store the new client state in the list: */
 				clientList.push_back(client);
@@ -655,7 +653,9 @@ void CollaborationClient::frame(void)
 					;
 				if(clIt!=clientList.end())
 					{
+					#ifdef VERBOSE
 					std::cout<<"Removing remote client "<<(*clIt)->name<<", ID "<<(*clIt)->clientID<<std::endl;
+					#endif
 					
 					/* Update the index of the followed/faced client: */
 					if(followClientIndex==clientIndex)

@@ -1,0 +1,106 @@
+========================================================================
+README for Collaboration Infrastructure version 1.4
+Copyright (c) 2008-2009 Oliver Kreylos
+========================================================================
+
+Overview
+========
+
+The Collaboration Infrastructure is a framework for the development of
+collaborative immersive applications between multiple sites, based on a
+client-server architecture. Any number of clients can dynamically
+connect to a central collaboration server to participate in a
+collaborative session. While connected, clients see representations of
+the viewers and input devices of all other connected clients, can see
+audio and/or 2D or 3D video from other clients supporting those options,
+and can use shared annotation tools. The capabilities of the basic
+collaboration infrastructure can be augmented by providing additional
+protocol plug-ins, such as the bundled audio/video transmission plug-in,
+or by integrating derived versions of the basic collaboration framework
+into applications.
+
+The Collaboration Infrastructure is an extension of the Vrui software
+development toolkit (see http://idav.ucdavis.edu/~okreylos/ResDev/Vrui),
+and runs in a variety of environments ranging from laptop or desktop
+computers over semi- immersive environments such as Geowalls to fully
+immersive virtual reality environments such as CAVEs.
+
+The Collaboration Infrastructure's development was supported by the
+University of California, Davis, by the UC Davis W.M. Keck Center for
+Active Visualization in the Earth Sciences (KeckCAVES,
+http://www.keckcaves.org), the W.M. Keck Foundation, and the National
+Science Foundation.
+
+Requirements
+============
+
+The Collaboration Infrastructure requires Vrui version 1.0 build 066 or
+newer. To support audio and 2D video transmission, libspeex and
+libtheora have to be installed.
+
+Installation Guide
+==================
+
+It is recommended to download or move the source packages for Vrui and
+the Collaboration Infrastructure into a src directory underneath the
+user's home directory. Otherwise, references to ~/src in the following
+instructions need to be changed.
+
+0. Install Vrui from ~/src/Vrui-1.0-<build> (see Vrui README file).
+
+1. Change into ~/src directory and unpack the Collaboration
+   Infrastructure tarball:
+   > cd ~/src
+   > tar xfz <download path>/CollaborationInfrastructure-<version>.tar.gz
+   - or -
+   > tar xf <download path>/CollaborationInfrastructure-<version>.tar
+
+2. Change into the Collaboration Infrastructure base directory:
+   > cd CollaborationInfrastructure-<version>
+
+3. Edit the makefile with a text editor. All settings that might need to
+   be changed are towards the beginning of the file.
+   
+   3a. Set the Vrui package root directory. This is the directory
+       created from unpacking the Vrui tarball, i.e.,
+       ~/src/Vrui-1.0-<build>. Use $(HOME) to refer to the user's home
+       directory instead of ~. For example:
+       VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-066
+   
+   3b. Set the Vrui installation directory. This is the directory into
+       which Vrui is installed during build, as configured in Vrui's
+       makefile. By default, this is ~/Vrui-1.0. Again, use $(HOME)
+       instead of ~. For example:
+       INSTALLDIR = $(HOME)/Vrui-1.0
+   
+   These are typically the only necessary changes. If you made any
+   changes to Vrui's makefile, please check the notes in the makefile
+   and adapt accordingly.
+
+4. Build the Collaboration Infrastructure:
+   > make
+
+5. Install the Collaboration Infrastructure:
+   > make install
+
+Configuring the Local Collaboration Environment
+===============================================
+
+The runtime system of the Collaboration Infrastructure is configured via
+a configuration file Collaboration.cfg in Vrui's configuration
+directory, which is $(INSTALLDIR)/etc, or, by default, ~/Vrui-1.0/etc.
+The configuration file contains sections for the collaboration server
+and the collaboration client, which in turn includes a section for each
+configured protocol plug-in.
+
+The most important change is to set the host name and port address of
+the collaboration server in the CollaborationClient section. This is the
+default server to which the collaboration client will connect when
+started. Depending on the collaborative application, the server can be
+overriden by other settings or by command line parameters. For example,
+the CollaborationClientTest program in Vrui's bin directory accepts a
+-server <host name>:<port address> command line argument.
+
+Other important settings are the sound and video device names in the
+Agora section (Agora is the protocol plug-in for shared audio and 2D
+video).

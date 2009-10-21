@@ -65,6 +65,7 @@ void* SpeexDecoder::decodingThreadMethod(void)
 			{
 			/* Restart the PCM device: */
 			prepare();
+			setStartThreshold(speexFrameSize*(speexPacketQueue.getMaxQueueSize()-1));
 			}
 		}
 	
@@ -102,10 +103,11 @@ SpeexDecoder::SpeexDecoder(const char* playbackPCMDeviceName,size_t sSpeexFrameS
 		playbackBuffer=new signed short int[speexFrameSize];
 		
 		/* Set the playback device's fragment size: */
-		setBufferSize(speexFrameSize*2,speexFrameSize); // This is the minimum, and it should work
+		setBufferSize(speexFrameSize*speexPacketQueue.getMaxQueueSize(),speexFrameSize);
 		
 		/* Prepare the device for playback: */
 		prepare();
+		setStartThreshold(speexFrameSize*(speexPacketQueue.getMaxQueueSize()-1));
 		
 		/* Start the audio decoding thread: */
 		decodingThread.start(this,&SpeexDecoder::decodingThreadMethod);

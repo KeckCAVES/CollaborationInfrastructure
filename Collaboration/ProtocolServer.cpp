@@ -114,6 +114,10 @@ void ProtocolServer::disconnectClient(ProtocolServer::ClientState* cs)
 	{
 	}
 
+void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
+	{
+	}
+
 void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
 	{
 	}

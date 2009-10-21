@@ -351,11 +351,15 @@ void AgoraClient::initialize(CollaborationClient& collaborationClient,Misc::Conf
 			videoDevice=new V4L2VideoDevice(captureVideoDeviceName.c_str());
 			
 			/* Configure the video device's video format and device settings: */
+			#ifdef VERBOSE
 			std::cout<<"AgoraClient::initialize: Configuring video capture device"<<std::endl;
+			#endif
 			videoDevice->configure(configFileSection);
 			
 			/* Retrieve the video device's video format: */
+			#ifdef VERBOSE
 			std::cout<<"AgoraClient::initialize: Retrieving video format"<<std::endl;
+			#endif
 			V4L2VideoDevice::VideoFormat videoFormat=videoDevice->getVideoFormat();
 			
 			/* Read Theora encoder settings: */
@@ -368,7 +372,9 @@ void AgoraClient::initialize(CollaborationClient& collaborationClient,Misc::Conf
 			int theoraGopSize=configFileSection.retrieveValue<int>("./theoraGopSize",50);
 			
 			/* Create a Theora encoder object: */
+			#ifdef VERBOSE
 			std::cout<<"AgoraClient::initialize: Creating Theora video encoder"<<std::endl;
+			#endif
 			{
 			TheoraInfo encoderInfo;
 			encoderInfo.width=videoFormat.size[0];
@@ -444,7 +450,9 @@ void AgoraClient::sendConnectRequest(CollaborationPipe& pipe)
 	if(theoraValid)
 		{
 		/* Retrieve the three stream header packets from the Theora encoder: */
+		#ifdef VERBOSE
 		std::cout<<"AgoraClient::sendConnectRequest: Encoding stream header packets"<<std::endl;
+		#endif
 		OggPacket tempPacket;
 		int result1=theora_encode_header(theoraEncoder,&tempPacket);
 		headerPackets[0].clone(tempPacket);
@@ -472,9 +480,10 @@ void AgoraClient::sendConnectRequest(CollaborationPipe& pipe)
 		messageLength+=headerPackets[0].getNetworkSize()+headerPackets[1].getNetworkSize()+headerPackets[2].getNetworkSize()+sizeof(Scalar)*2;
 	pipe.write<unsigned int>(messageLength);
 	
-	std::cout<<"AgoraClient::sendConnectRequest: Sending "<<messageLength<<" bytes"<<std::endl;
-	
 	/* Write the SPEEX frame and packet size: */
+	#ifdef VERBOSE
+	std::cout<<"AgoraClient::sendConnectRequest: Sending "<<messageLength<<" bytes"<<std::endl;
+	#endif
 	pipe.write<unsigned int>(speexEncoder!=0?speexEncoder->getFrameSize():0);
 	pipe.write<unsigned int>(speexEncoder!=0?speexEncoder->getPacketQueue().getSegmentSize():0);
 	pipe.write<unsigned int>(speexEncoder!=0?speexEncoder->getPacketQueue().getMaxQueueSize():0);
@@ -505,7 +514,9 @@ void AgoraClient::receiveConnectReply(CollaborationPipe& pipe)
 		try
 			{
 			/* Start capturing and encoding video: */
+			#ifdef VERBOSE
 			std::cout<<"AgoraClient::receiveConnectReply: Starting video capture"<<std::endl;
+			#endif
 			videoDevice->allocateFrameBuffers(5);
 			videoDevice->startStreaming(new Misc::VoidMethodCall<const V4L2VideoDevice::FrameBuffer&,AgoraClient>(this,&AgoraClient::videoCaptureCallback));
 			}
@@ -609,7 +620,9 @@ AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationP
 			{
 			/* Create an encoder info structure by reading the remote client's Theora stream header packets: */
 			{
+			#ifdef VERBOSE
 			std::cout<<"Reading remote client's video stream headers"<<std::endl;
+			#endif
 			TheoraInfo decoderInfo;
 			decoderInfo.readStreamHeaders(pipe);
 			
@@ -618,7 +631,9 @@ AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationP
 			newClientState->frameSize[1]=decoderInfo.height;
 			
 			/* Create a video decoder: */
+			#ifdef VERBOSE
 			std::cout<<"Creating video decoder"<<std::endl;
+			#endif
 			newClientState->theoraDecoder=new TheoraDecoder(decoderInfo);
 			}
 			

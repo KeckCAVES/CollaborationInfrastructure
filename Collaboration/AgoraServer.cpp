@@ -175,13 +175,10 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 	if(mySourceCs->speexFrameSize>0)
 		{
 		/* Send all SPEEX packets from the source client's packet buffer to the destination client: */
-		size_t numSpeexPackets=mySourceCs->speexPacketBuffer.getQueueSize();
-		
-		/* Send all packets from the SPEEX queue: */
-		pipe.write<unsigned short>(numSpeexPackets);
-		for(size_t i=0;i<numSpeexPackets;++i)
+		pipe.write<unsigned short>(mySourceCs->numSpeexPackets);
+		for(size_t i=0;i<mySourceCs->numSpeexPackets;++i)
 			{
-			const char* speexPacket=mySourceCs->speexPacketBuffer.popSegment();
+			const char* speexPacket=mySourceCs->speexPacketBuffer.getLockedSegment(i);
 			pipe.write<char>(speexPacket,mySourceCs->speexPacketSize);
 			}
 		}
@@ -190,7 +187,7 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 	if(mySourceCs->hasTheora)
 		{
 		/* Check if there is a new video packet for the client: */
-		if(mySourceCs->theoraPacketBuffer.lockNewValue())
+		if(mySourceCs->hasTheoraPacket)
 			{
 			/* Write the Theora packet to the client: */
 			pipe.write<char>(1);
@@ -202,6 +199,32 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 		/* Write the source client's new video transformation: */
 		pipe.writeTrackerState(mySourceCs->videoTransform);
 		}
+	}
+
+void AgoraServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
+	{
+	/* Get a handle on the Agora state object: */
+	ClientState* myCs=dynamic_cast<ClientState*>(cs);
+	if(myCs==0)
+		Misc::throwStdErr("AgoraServer::beforeServerUpdate: Client state object has mismatching type");
+	
+	/* Lock the available SPEEX packets: */
+	myCs->numSpeexPackets=myCs->speexFrameSize>0?myCs->speexPacketBuffer.lockQueue():0;
+	
+	/* Check if there is a new Theora packet in the receiving buffer: */
+	myCs->hasTheoraPacket=myCs->hasTheora&&myCs->theoraPacketBuffer.lockNewValue();
+	}
+
+void AgoraServer::afterServerUpdate(ProtocolServer::ClientState* cs)
+	{
+	/* Get a handle on the Agora state object: */
+	ClientState* myCs=dynamic_cast<ClientState*>(cs);
+	if(myCs==0)
+		Misc::throwStdErr("AgoraServer::afterServerUpdate: Client state object has mismatching type");
+	
+	/* Unlock the SPEEX packet buffer: */
+	if(myCs->speexFrameSize>0)
+		myCs->speexPacketBuffer.unlockQueue();
 	}
 
 }

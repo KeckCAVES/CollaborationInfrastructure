@@ -85,14 +85,24 @@ bool CollaborationServer::ClientConnection::negotiateProtocols(CollaborationServ
 		size_t protocolMessageLength=pipe.read<unsigned int>();
 		
 		/* Ask the server to load the protocol: */
-		std::cout<<"Loading protocol "<<protocolName<<"..."<<std::flush;
+		#ifdef VERBOSE
+		std::cout<<"CollaborationServer: Loading protocol "<<protocolName<<"..."<<std::flush;
+		#endif
 		std::pair<ProtocolServer*,int> ps=server.loadProtocol(protocolName);
 		if(ps.first!=0)
 			{
-			std::cout<<" done"<<std::endl;
-			
 			/* Let the protocol plug-in process the message payload: */
 			ProtocolClientState* pcs=ps.first->receiveConnectRequest(protocolMessageLength,pipe);
+			
+			#ifdef VERBOSE
+			if(pcs!=0)
+				std::cout<<" done"<<std::endl;
+			else
+				std::cout<<" rejected by protocol engine"<<std::endl;
+			#else
+			if(pcs==0)
+				std::cerr<<"CollaborationServer: Protocol "<<protocolName<<" rejected by protocol engine"<<std::endl;
+			#endif
 			
 			/* Add the protocol to the client state object's list: */
 			protocols.push_back(ProtocolListEntry(ps.second,i,ps.first,pcs));
@@ -102,7 +112,11 @@ bool CollaborationServer::ClientConnection::negotiateProtocols(CollaborationServ
 			}
 		else
 			{
-			std::cout<<" rejected"<<std::endl;
+			#ifdef VERBOSE
+			std::cout<<" rejected due to missing plug-in"<<std::endl;
+			#else
+			std::cerr<<"CollaborationServer: Protocol "<<protocolName<<" rejected due to missing plug-in"<<std::endl;
+			#endif
 			
 			/* Skip the protocol message payload: */
 			unsigned char skipBuffer[256];
@@ -711,7 +725,16 @@ void CollaborationServer::update(void)
 	
 	/* Lock the connection states of all clients: */
 	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
-		(*clIt)->mutex.lock();
+		{
+		ClientConnection* client=*clIt;
+		
+		/* Lock the client state: */
+		client->mutex.lock();
+		
+		/* Process plug-in protocols for the client: */
+		for(ClientConnection::ClientProtocolList::iterator cplIt=client->protocols.begin();cplIt!=client->protocols.end();++cplIt)
+			cplIt->protocol->beforeServerUpdate(cplIt->protocolClientState);
+		}
 	
 	/* Create a temporary action list to cleanly disconnect all clients that bomb out during the update step: */
 	std::vector<ClientConnection*> deadClientList;

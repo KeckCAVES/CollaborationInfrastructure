@@ -39,9 +39,18 @@ include $(VRUIPACKAGEROOT)/BuildRoot/Packages
 # installed.
 INSTALLDIR = $(HOME)/Vrui-1.0
 
+# Root directory for vislet plugins underneath Vrui's library directory.
+# This needs to be changed if Vrui's vislet directory was changed in
+# Vrui's makefile.
+VISLETPLUGINEXT = VRVislets
+
 # Root directory for protocol plugins underneath Vrui's library
 # directory:
 PROTOCOLPLUGINEXT = CollaborationPlugins
+
+# Uncomment the following line to receive status messages from the
+# protocol engine:
+# CFLAGS += -DVERBOSE
 
 # Set this to 1 if Vrui executables and shared libraries shall contain
 # links to any shared libraries they link to. This will relieve a user
@@ -57,7 +66,7 @@ GLSUPPORT_USE_TLS = 0
 
 # Specify version of created dynamic shared libraries
 MAJORLIBVERSION = 1
-MINORLIBVERSION = 1
+MINORLIBVERSION = 4
 
 # Specify default optimization/debug level
 ifdef DEBUG
@@ -74,6 +83,7 @@ ifdef DEBUG
 else
   LIBDESTDIR = $(PACKAGEROOT)/$(LIBEXT)
 endif
+VISLETDESTDIR = $(LIBDESTDIR)/$(VISLETPLUGINEXT)
 PLUGINDESTDIR = $(LIBDESTDIR)/$(PROTOCOLPLUGINEXT)
 
 # Directories for installation components
@@ -85,6 +95,7 @@ else
   LIBINSTALLDIR = $(INSTALLDIR)/$(LIBEXT)
   EXECUTABLEINSTALLDIR = $(INSTALLDIR)/$(BINEXT)
 endif
+VISLETINSTALLDIR = $(LIBINSTALLDIR)/$(VISLETPLUGINEXT)
 PLUGININSTALLDIR = $(LIBINSTALLDIR)/$(PROTOCOLPLUGINEXT)
 ETCINSTALLDIR = $(INSTALLDIR)/etc
 SHAREINSTALLDIR = $(INSTALLDIR)/share
@@ -133,6 +144,7 @@ else
   CFLAGS += $(CDSOFLAGS)
   LIBRARYNAME=$(LIBDESTDIR)/$(call FULLDSONAME,$(1))
 endif
+VISLETNAME = $(VISLETDESTDIR)/lib$(1).$(PLUGINFILEEXT)
 PLUGINNAME = $(PLUGINDESTDIR)/lib$(1).$(PLUGINFILEEXT)
 
 ########################################################################
@@ -147,6 +159,7 @@ PACKAGES =
 ########################################################################
 
 LIBRARIES = 
+VISLETS = 
 PLUGINS = 
 EXECUTABLES = 
 
@@ -172,6 +185,14 @@ PLUGIN_NAMES = FooServer \
 PLUGINS += $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
 
 #
+# The vislet plugins:
+#
+
+VISLET_NAMES = CollaborationClient
+
+VISLETS += $(VISLET_NAMES:%=$(call VISLETNAME,%))
+
+#
 # The collaboration server test program:
 #
 
@@ -183,13 +204,13 @@ EXECUTABLES += $(EXEDIR)/CollaborationServer
 
 EXECUTABLES += $(EXEDIR)/CollaborationClientTest
 
-ALL = $(LIBRARIES) $(PLUGINS) $(EXECUTABLES)
+ALL = $(LIBRARIES) $(PLUGINS) $(VISLETS) $(EXECUTABLES)
 
 .PHONY: all
 all: config $(ALL)
 
-# Make all plugins and executables depend on collaboration library:
-$(PLUGINS) $(EXECUTABLES): $(call LIBRARYNAME,libCollaboration)
+# Make all plugins, vislets, and executables depend on collaboration library:
+$(PLUGINS) $(VISLETS) $(EXECUTABLES): $(call LIBRARYNAME,libCollaboration)
 
 ########################################################################
 # Pseudo-target to print configuration options
@@ -205,6 +226,8 @@ else
 	@echo "Multithreaded rendering disabled"
 endif
 	@echo "Installation directory: $(INSTALLDIR)"
+	@echo "Vislet plug-in directory: $(VISLETINSTALLDIR)"
+	@echo "Protocol plug-in directory: $(PLUGININSTALLDIR)"
 	@echo "--------"
 
 ########################################################################
@@ -215,6 +238,7 @@ endif
 extraclean:
 	-rm -f $(LIBRARY_NAMES:%=$(LIBDESTDIR)/$(call DSONAME,%))
 	-rm -f $(LIBRARY_NAMES:%=$(LIBDESTDIR)/$(call LINKDSONAME,%))
+	-rm -f $(VISLET_NAMES:%=$(call VISLETNAME,%))
 	-rm -f $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
 
 .PHONY: extrasqueakyclean
@@ -298,6 +322,27 @@ $(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
 .SECONDARY: $(PLUGIN_NAMES:%=$(OBJDIR)/Collaboration/%.o)
 
 #
+# The collaboration client vislet:
+#
+
+# Implicit rule for creating vislet plug-ins:
+$(call VISLETNAME,%): PACKAGES += MYCOLLABORATION
+$(call VISLETNAME,%): CFLAGS += $(CPLUGINFLAGS)
+$(call VISLETNAME,%): $(OBJDIR)/%Vislet.o
+	@mkdir -p $(VISLETDESTDIR)
+ifdef SHOWCOMMAND
+	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+else
+	@echo Linking $@...
+	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+endif
+
+$(call VISLETNAME,CollaborationClient): $(OBJDIR)/CollaborationClientVislet.o
+
+# Mark all vislet plugin object files as intermediate:
+.SECONDARY: $(VISLET_NAMES:%=$(OBJDIR)/%Vislet.o)
+
+#
 # The collaboration server test program:
 #
 
@@ -340,10 +385,14 @@ install: all
 	@install $(LIBRARIES) $(LIBINSTALLDIR)
 	@echo Configuring run-time linker...
 	$(foreach LIBNAME,$(LIBRARY_NAMES),$(call CREATE_SYMLINK,$(LIBNAME)))
-# Install all plugins in PLUGININSTALLDIR:
+# Install all protocol plugins in PLUGININSTALLDIR:
 	@echo Installing protocol plugins...
 	@install -d $(PLUGININSTALLDIR)
 	@install $(PLUGINS) $(PLUGININSTALLDIR)
+# Install all vislet plugins in VISLETINSTALLDIR:
+	@echo Installing vislet plugins...
+	@install -d $(VISLETINSTALLDIR)
+	@install $(VISLETS) $(VISLETINSTALLDIR)
 # Install all binaries in EXECUTABLEINSTALLDIR:
 	@echo Installing executables...
 	@install -d $(EXECUTABLEINSTALLDIR)
@@ -368,6 +417,8 @@ uninstall:
 	$(foreach LIBNAME,$(LIBRARY_NAMES),$(call DESTROY_SYMLINK,$(LIBNAME)))
 	@echo Removing protocol plugins...
 	@rm -rf $(PLUGININSTALLDIR)
+	@echo Removing vislet plugins...
+	@rm -f $(VISLETS)
 	@echo Removing executables...
 	@rm -f $(EXECUTABLES)
 	@echo Removing configuration files...

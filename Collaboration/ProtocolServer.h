@@ -89,6 +89,7 @@ class ProtocolServer
 	virtual bool handleMessage(ClientState* cs,unsigned int messageId,CollaborationPipe& pipe); // Hook called when server receives unknown message from client; returns false to signal protocol error
 	virtual void connectClient(ClientState* cs); // Hook called when connection to a new client has been fully established
 	virtual void disconnectClient(ClientState* cs); // Hook called after a client has been disconnected (voluntarily or involuntarily)
+	virtual void beforeServerUpdate(ClientState* cs); // Hook called before the server sends state update messages to any client
 	virtual void beforeServerUpdate(ClientState* destCs,CollaborationPipe& pipe); // Hook called right before the server sends a state update message to the given client
 	virtual void afterServerUpdate(ClientState* cs); // Hook called after the server completed all update messages to all clients
 	};

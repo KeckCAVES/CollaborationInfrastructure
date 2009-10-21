@@ -53,6 +53,9 @@ class AgoraServer:public ProtocolServer,public AgoraPipe
 		OGTransform videoTransform; // Client's current transformation from local video space to shared navigational space
 		Scalar videoSize[2]; // Client's virtual video size in client's video space
 		
+		size_t numSpeexPackets; // Transient number of SPEEX packets in the packet queue during server updates
+		bool hasTheoraPacket; // Transient flag to denote a fresh Theora frame in the packet buffer during server updates
+		
 		/* Constructors and destructors: */
 		public:
 		ClientState(void);
@@ -70,6 +73,8 @@ class AgoraServer:public ProtocolServer,public AgoraPipe
 	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
 	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual void beforeServerUpdate(ProtocolServer::ClientState* cs);
+	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
 	};
 
 }

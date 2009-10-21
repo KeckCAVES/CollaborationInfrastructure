@@ -21,3 +21,11 @@ CollaborationInfrastructure-1.3:
 - Changed initialization of collaboration client and server objects to
   accept a Configuration object, with methods to change important
   settings.
+
+CollaborationInfrastructure-1.4:
+- Fixed multi-party communication protocol in Agora plug-in.
+- Cleaned up status and warning messages from all components.
+- Applied buffer size configuration options to PCM hardware devices for
+  improved underrun / overrun recovery.
+- Added collaboration client vislet to integrate collaboration
+  facilities into otherwise unaware Vrui applications.
