@@ -88,10 +88,6 @@ void ProtocolServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Pro
 	{
 	}
 
-void ProtocolServer::sendClientDisconnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
-	{
-	}
-
 void ProtocolServer::sendServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
 	{
 	}
@@ -114,6 +110,10 @@ void ProtocolServer::disconnectClient(ProtocolServer::ClientState* cs)
 	{
 	}
 
+void ProtocolServer::beforeServerUpdate(void)
+	{
+	}
+
 void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
 	{
 	}
@@ -123,6 +123,10 @@ void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,Coll
 	}
 
 void ProtocolServer::afterServerUpdate(ProtocolServer::ClientState* cs)
+	{
+	}
+
+void ProtocolServer::afterServerUpdate(void)
 	{
 	}
 

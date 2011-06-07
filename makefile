@@ -1,6 +1,6 @@
 ########################################################################
 # Makefile for Vrui collaboration infrastructure.
-# Copyright (c) 2009 Oliver Kreylos
+# Copyright (c) 2009-2011 Oliver Kreylos
 #
 # This file is part of the WhyTools Build Environment.
 # 
@@ -28,7 +28,7 @@ PACKAGEROOT := $(shell pwd)
 # makefiles for Vrui-based applications, but the directory in which Vrui
 # itself was built. This is because the collaboration infrastructure is
 # an extension of Vrui itself.
-VRUIPACKAGEROOT := $(HOME)/src/Vrui-1.0-066
+VRUIPACKAGEROOT := $(HOME)/src/Vrui-2.1-001
 
 # Include definitions for the system environment
 include $(VRUIPACKAGEROOT)/BuildRoot/SystemDefinitions
@@ -37,7 +37,7 @@ include $(VRUIPACKAGEROOT)/BuildRoot/Packages
 # Root directory for the software installation
 # NOTE: This must be the same directory into which Vrui itself was
 # installed.
-INSTALLDIR = $(HOME)/Vrui-1.0
+INSTALLDIR = $(HOME)/Vrui-2.1
 
 # Root directory for vislet plugins underneath Vrui's library directory.
 # This needs to be changed if Vrui's vislet directory was changed in
@@ -66,7 +66,7 @@ GLSUPPORT_USE_TLS = 0
 
 # Specify version of created dynamic shared libraries
 MAJORLIBVERSION = 1
-MINORLIBVERSION = 4
+MINORLIBVERSION = 6
 
 # Specify default optimization/debug level
 ifdef DEBUG
@@ -177,10 +177,12 @@ LIBRARIES += $(LIBRARY_NAMES:%=$(call LIBRARYNAME,%))
 
 PLUGIN_NAMES = FooServer \
                FooClient \
-               AgoraServer \
-               AgoraClient \
+               CheriaServer \
+               CheriaClient \
                GrapheinServer \
-               GrapheinClient
+               GrapheinClient \
+               AgoraServer \
+               AgoraClient
 
 PLUGINS += $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
 
@@ -302,6 +304,12 @@ else
 	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 endif
 
+$(call PLUGINNAME,CheriaServer): $(OBJDIR)/Collaboration/CheriaPipe.o \
+                                 $(OBJDIR)/Collaboration/CheriaServer.o
+
+$(call PLUGINNAME,CheriaClient): $(OBJDIR)/Collaboration/CheriaPipe.o \
+                                 $(OBJDIR)/Collaboration/CheriaClient.o
+
 $(call PLUGINNAME,GrapheinServer): $(OBJDIR)/Collaboration/GrapheinPipe.o \
                                    $(OBJDIR)/Collaboration/GrapheinServer.o
 
@@ -314,7 +322,6 @@ $(call PLUGINNAME,AgoraServer): $(OBJDIR)/Collaboration/AgoraPipe.o \
 $(call PLUGINNAME,AgoraClient): PACKAGES += THEORA OGG SPEEX
 $(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
                                 $(OBJDIR)/Collaboration/SpeexDecoder.o \
-                                $(OBJDIR)/Collaboration/V4L2VideoDevice.o \
                                 $(OBJDIR)/Collaboration/AgoraPipe.o \
                                 $(OBJDIR)/Collaboration/AgoraClient.o
 

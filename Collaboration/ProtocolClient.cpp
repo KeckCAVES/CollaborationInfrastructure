@@ -3,7 +3,7 @@ ProtocolClient - Abstract base class for the client-side components of
 collaboration protocols that can be added to the base protocol
 implemented by CollaborationClient and CollaborationServer, to simplify
 creating complex higher-level protocols.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -64,6 +64,17 @@ void ProtocolClient::initialize(CollaborationClient& collaborationClient,Misc::C
 	{
 	}
 
+bool ProtocolClient::haveSettingsDialog(void) const
+	{
+	/* Default is not to have user interface elements: */
+	return false;
+	}
+
+void ProtocolClient::buildSettingsDialog(GLMotif::RowColumn* settingsDialog)
+	{
+	/* Default behavior is to do nothing */
+	}
+
 void ProtocolClient::sendConnectRequest(CollaborationPipe& pipe)
 	{
 	/* Must send a zero to indicate an empty protocol message: */
@@ -94,10 +105,6 @@ ProtocolClient::RemoteClientState* ProtocolClient::receiveClientConnect(Collabor
 	{
 	/* Return a dummy object: */
 	return new RemoteClientState;
-	}
-
-void ProtocolClient::receiveClientDisconnect(RemoteClientState* rcs,CollaborationPipe& pipe)
-	{
 	}
 
 void ProtocolClient::receiveServerUpdate(CollaborationPipe& pipe)
@@ -138,11 +145,19 @@ void ProtocolClient::frame(ProtocolClient::RemoteClientState* rcs)
 	{
 	}
 
-void ProtocolClient::display(GLContextData& contextData) const
+void ProtocolClient::glRenderAction(GLContextData& contextData) const
 	{
 	}
 
-void ProtocolClient::display(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
+void ProtocolClient::glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
+	{
+	}
+
+void ProtocolClient::alRenderAction(ALContextData& contextData) const
+	{
+	}
+
+void ProtocolClient::alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALContextData& contextData) const
 	{
 	}
 

@@ -29,3 +29,6 @@ CollaborationInfrastructure-1.4:
   improved underrun / overrun recovery.
 - Added collaboration client vislet to integrate collaboration
   facilities into otherwise unaware Vrui applications.
+
+CollaborationInfrastructure-1.5:
+- Bumped Vrui version requirement to Vrui-2.1-001.

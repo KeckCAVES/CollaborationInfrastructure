@@ -1,7 +1,7 @@
 /***********************************************************************
 GrapheinClient - Client object to implement the Graphein shared
 annotation protocol.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -28,8 +28,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Threads/Mutex.h>
 #include <GLMotif/NewButton.h>
 #include <GLMotif/Slider.h>
-#include <Vrui/Tools/Tool.h>
-#include <Vrui/Tools/GenericToolFactory.h>
+#include <Vrui/UtilityTool.h>
+#include <Vrui/GenericToolFactory.h>
 #include <Vrui/ToolManager.h>
 #include <Collaboration/ProtocolClient.h>
 
@@ -61,13 +61,13 @@ class GrapheinClient:public ProtocolClient,public GrapheinPipe
 		virtual ~RemoteClientState(void);
 		
 		/* Methods: */
-		void display(GLContextData& contextData) const; // Displays the remote client's state
+		void glRenderAction(GLContextData& contextData) const; // Displays the remote client's state
 		};
 	
 	class GrapheinTool; // Forward declaration
 	typedef Vrui::GenericToolFactory<GrapheinTool> GrapheinToolFactory; // Graphein tool class uses the generic factory class
 	
-	class GrapheinTool:public Vrui::Tool // Class for Graphein annotation tools
+	class GrapheinTool:public Vrui::UtilityTool // Class for Graphein annotation tools
 		{
 		friend class Vrui::GenericToolFactory<GrapheinTool>;
 		friend class GrapheinClient;
@@ -97,7 +97,7 @@ class GrapheinClient:public ProtocolClient,public GrapheinPipe
 			{
 			return factory;
 			}
-		virtual void buttonCallback(int deviceIndex,int buttonIndex,Vrui::InputDevice::ButtonCallbackData* cbData);
+		virtual void buttonCallback(int buttonSlotIndex,Vrui::InputDevice::ButtonCallbackData* cbData);
 		virtual void frame(void);
 		virtual void display(GLContextData& contextData) const;
 		
@@ -129,11 +129,11 @@ class GrapheinClient:public ProtocolClient,public GrapheinPipe
 	virtual void receiveConnectReply(CollaborationPipe& pipe);
 	virtual void receiveDisconnectReply(CollaborationPipe& pipe);
 	virtual void sendClientUpdate(CollaborationPipe& pipe);
-	virtual RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
+	virtual ProtocolClient::RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
 	virtual void receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);
 	virtual void frame(ProtocolClient::RemoteClientState* rcs);
-	virtual void display(GLContextData& contextData) const;
-	virtual void display(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;
+	virtual void glRenderAction(GLContextData& contextData) const;
+	virtual void glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;
 	
 	/* New methods: */
 	void toolCreationCallback(Vrui::ToolManager::ToolCreationCallbackData* cbData);

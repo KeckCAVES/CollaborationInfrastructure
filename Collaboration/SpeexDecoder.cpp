@@ -1,7 +1,7 @@
 /***********************************************************************
 SpeexDecoder - Class encapsulating an audio decoder using the SPEEX
 speech codec.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -23,7 +23,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/SpeexDecoder.h>
 
-#include <Sound/SoundDataFormat.h>
+#include <iostream>
 
 namespace Collaboration {
 
@@ -40,74 +40,45 @@ void* SpeexDecoder::decodingThreadMethod(void)
 		{
 		/* Get an encoded SPEEX packet from the queue: */
 		const char* speexPacket=speexPacketQueue.popSegment();
-		if(speexPacket!=0)
-			{
-			/* Decode the packet: */
-			speex_bits_read_from(&speexBits,const_cast<char*>(speexPacket),speexPacketQueue.getSegmentSize()); // API failure!
-			
-			/* Decode the sound data: */
-			if(speex_decode_int(speexState,&speexBits,playbackBuffer)<0) // This is an untreatable error; need to bail out
-				break;
-			speex_bits_reset(&speexBits);
-			}
-		else
-			{
-			/* Let SPEEX generate filler sound: */
-			speex_decode_int(speexState,0,playbackBuffer);
-			}
 		
-		/* Write the decoded frame to the sound device: */
-		try
+		/* Unpack the packet: */
+		speex_bits_read_from(&speexBits,const_cast<char*>(speexPacket),speexPacketQueue.getSegmentSize()); // API failure!
+		
+		/* Decode the sound data: */
+		signed short int* decodedSegment=decodedPacketQueue.getWriteSegment();
+		if(speex_decode_int(speexState,&speexBits,decodedSegment)<0) // This is an untreatable error; need to bail out
 			{
-			write(playbackBuffer,speexFrameSize);
+			std::cerr<<"Collaboration::SpeexDecoder: Fatal error in SPEEX decoding routine; terminating sound playback"<<std::endl;
+			break;
 			}
-		catch(Sound::ALSAPCMDevice::UnderrunError err) // This should really never happen, but it does
-			{
-			/* Restart the PCM device: */
-			prepare();
-			setStartThreshold(speexFrameSize*(speexPacketQueue.getMaxQueueSize()-1));
-			}
+		speex_bits_reset(&speexBits);
+		
+		/* Push the decoded packet to the output queue: */
+		decodedPacketQueue.pushSegment();
 		}
 	
 	return 0;
 	}
 
-SpeexDecoder::SpeexDecoder(const char* playbackPCMDeviceName,size_t sSpeexFrameSize,Threads::DropoutBuffer<char>& sSpeexPacketQueue)
-	:Sound::ALSAPCMDevice(playbackPCMDeviceName,false),
-	 speexState(0),
+SpeexDecoder::SpeexDecoder(size_t sSpeexFrameSize,Threads::DropoutBuffer<char>& sSpeexPacketQueue)
+	:speexState(0),
 	 speexPacketQueue(sSpeexPacketQueue),
-	 speexFrameSize(sSpeexFrameSize),playbackBuffer(0)
+	 speexFrameSize(sSpeexFrameSize),
+	 decodedPacketQueue(speexFrameSize,speexPacketQueue.getMaxQueueSize())
 	{
 	bool speexBitsInitialized=false;
 	try
 		{
-		/* Set the PCM device's sound format for SPEEX wideband decoding: */
-		Sound::SoundDataFormat format;
-		format.setStandardSampleFormat(16,true,Sound::SoundDataFormat::DontCare);
-		format.samplesPerFrame=1;
-		format.framesPerSecond=16000;
-		setSoundDataFormat(format);
-		
 		/* Initialize the SPEEX decoder: */
 		speexState=speex_decoder_init(&speex_wb_mode);
 		spx_int32_t enhancement=0;
 		speex_decoder_ctl(speexState,SPEEX_SET_ENH,&enhancement);
-		spx_int32_t speexSamplingRate=format.framesPerSecond;
+		spx_int32_t speexSamplingRate=16000;
 		speex_decoder_ctl(speexState,SPEEX_SET_SAMPLING_RATE,&speexSamplingRate);
 		
 		/* Initialize the SPEEX bit unpacker: */
 		speex_bits_init(&speexBits);
 		speexBitsInitialized=true;
-		
-		/* Allocate the raw audio playback buffer: */
-		playbackBuffer=new signed short int[speexFrameSize];
-		
-		/* Set the playback device's fragment size: */
-		setBufferSize(speexFrameSize*speexPacketQueue.getMaxQueueSize(),speexFrameSize);
-		
-		/* Prepare the device for playback: */
-		prepare();
-		setStartThreshold(speexFrameSize*(speexPacketQueue.getMaxQueueSize()-1));
 		
 		/* Start the audio decoding thread: */
 		decodingThread.start(this,&SpeexDecoder::decodingThreadMethod);
@@ -115,7 +86,6 @@ SpeexDecoder::SpeexDecoder(const char* playbackPCMDeviceName,size_t sSpeexFrameS
 	catch(...)
 		{
 		/* Clean up and re-throw: */
-		delete[] playbackBuffer;
 		if(speexBitsInitialized)
 			speex_bits_destroy(&speexBits);
 		if(speexState!=0)
@@ -131,7 +101,6 @@ SpeexDecoder::~SpeexDecoder(void)
 	decodingThread.join();
 	
 	/* Release all allocated resources: */
-	delete[] playbackBuffer;
 	speex_bits_destroy(&speexBits);
 	speex_decoder_destroy(speexState);
 	}

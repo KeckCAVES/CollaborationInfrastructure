@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -46,6 +46,7 @@ namespace GLMotif {
 class PopupWindow;
 class RowColumn;
 }
+class ALContextData;
 
 namespace Collaboration {
 
@@ -171,16 +172,29 @@ class CollaborationClient
 	int faceClientIndex; // Index of client whom to face in a conversation (-1 if disabled)
 	
 	/* User interface: */
-	GLMotif::PopupWindow* remoteClientDialogPopup; // Dialog window showing currently connected remote clients
+	GLMotif::PopupWindow* clientDialogPopup; // Dialog window showing the state of the collaboration client
+	GLMotif::ToggleButton* showSettingsToggle; // Toggle button to show/hide the client settings dialog
 	GLMotif::RowColumn* clientListRowColumn; // RowColumn widget containing the connected client list
+	GLMotif::PopupWindow* settingsDialogPopup; // Dialog window to configure the collaboration client at runtime
 	
 	/* Rendering flags: */
 	Vrui::Glyph viewerGlyph; // Glyph to render a remote viewer
+	#ifdef COLLABORATION_SHARE_DEVICES
 	Vrui::Glyph inputDeviceGlyph; // Glyph to render a remote input device
+	#endif
 	bool fixGlyphScaling; // Always keep displayed glyphs at their configured size, even when navigation scaling is different
 	bool renderRemoteEnvironments; // Render the orientations and sizes of the environments of remote clients
 	
 	/* Private methods: */
+	void createClientDialog(void);
+	void createSettingsDialog(void);
+	void showSettingsDialog(void);
+	void showSettingsToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void fixGlyphScalingToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void renderRemoteEnvironmentsToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void settingsDialogCloseCallback(Misc::CallbackData* cbData);
 	void* communicationThreadMethod(void); // Method for thread receiving messages from the collaboration server
 	void* serverUpdateThreadMethod(void); // Method for thread sending client state updates to the collaboration server
 	
@@ -205,16 +219,27 @@ class CollaborationClient
 		{
 		return viewerGlyph;
 		}
+	#ifdef COLLABORATION_SHARE_DEVICES
 	Vrui::Glyph& getInputDeviceGlyph(void) // Returns the glyph used to display remote input devices
 		{
 		return inputDeviceGlyph;
 		}
+	#endif
+	bool getFixGlyphScaling(void) const // Returns the fixed glyph scaling flag
+		{
+		return fixGlyphScaling;
+		}
 	void setFixGlyphScaling(bool enable); // Sets the fixed glyph scaling flag
 	void setRenderRemoteEnvironments(bool enable); // Sets the remote environment rendering flag
+	void showDialog(void); // Shows the collaboration client dialog
+	void hideDialog(void); // Hides the collaboration client dialog
+	GLMotif::PopupWindow* getDialog(void) // Returns the collaboration client dialog
+		{
+		return clientDialogPopup;
+		}
 	virtual void frame(void); // Same as frame method of Vrui applications and vislets
 	virtual void display(GLContextData& contextData) const; // Same as display method of Vrui applications and vislets; needs to be called in navigation coordinates
-	void followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData); // Callback method when one of the "Follow" toggles changes value
-	void faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData); // Callback method when one of the "Face" toggles changes value
+	virtual void sound(ALContextData& contextData) const; // Same as sound method of Vrui applications and vislets; needs to be called in navigation coordinates
 	
 	/*********************************************************************
 	Hook methods to layer application-level protocols over the base
@@ -229,13 +254,13 @@ class CollaborationClient
 	virtual void receiveDisconnectReply(void); // Hook called when the client receives a disconnection reply message from the server
 	virtual void sendClientUpdate(void); // Hook called when the client sends a client state update packet
 	virtual void receiveClientConnect(unsigned int clientID); // Hook called when the client receives a connection message for the given remote client
-	virtual void receiveClientDisconnect(unsigned int clientID); // Hook called when the client receives a disconnection message for the given remote client
 	virtual void receiveServerUpdate(void); // Hook called when the client receives a state update packet from the server
 	virtual void receiveServerUpdate(unsigned int clientID); // Hook called when the client receives a state update packet for the given remote client from the server
 	
 	/* Hooks to insert processing into the lower-level protocol state machine: */
 	virtual bool handleMessage(CollaborationPipe::MessageIdType messageId); // Hook called when the client receives unknown message from server; returns false to signal protocol error
 	virtual void beforeClientUpdate(void); // Hook called right before the client sends a client update packet
+	virtual void disconnectClient(unsigned int clientID); // Hook called when a remote client gets disconnected from the server
 	};
 
 }

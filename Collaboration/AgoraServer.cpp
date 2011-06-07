@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraServer - Server object to implement the Agora group audio protocol.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -35,12 +35,14 @@ Methods of class AgoraServer::ClientState:
 
 AgoraServer::ClientState::ClientState(void)
 	:speexFrameSize(0),
-	 speexPacketSize(0),speexPacketBuffer(0,0)
+	 speexPacketSize(0),speexPacketBuffer(0,0),
+	 theoraHeaders(0)
 	{
 	}
 
 AgoraServer::ClientState::~ClientState(void)
 	{
+	delete[] theoraHeaders;
 	}
 
 /****************************
@@ -79,11 +81,11 @@ ProtocolServer::ClientState* AgoraServer::receiveConnectRequest(unsigned int pro
 	if(newClientState->hasTheora)
 		{
 		/* Read the client's Theora video stream headers: */
-		for(int i=0;i<3;++i)
-			{
-			newClientState->theoraStreamHeaders[i].read(pipe);
-			readMessageLength+=newClientState->theoraStreamHeaders[i].getNetworkSize();
-			}
+		newClientState->theoraHeadersSize=pipe.read<unsigned int>();
+		readMessageLength+=sizeof(unsigned int);
+		newClientState->theoraHeaders=new unsigned char[newClientState->theoraHeadersSize];
+		pipe.read<unsigned char>(newClientState->theoraHeaders,newClientState->theoraHeadersSize);
+		readMessageLength+=newClientState->theoraHeadersSize;
 		
 		/* Read the client's virtual video size: */
 		for(int i=0;i<2;++i)
@@ -120,6 +122,9 @@ void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collaborat
 			pipe.read<char>(speexPacket,myCs->speexPacketSize);
 			myCs->speexPacketBuffer.pushSegment();
 			}
+		
+		/* Read the client's current head position: */
+		pipe.read<Scalar>(myCs->headPosition.getComponents(),3);
 		}
 	
 	if(myCs->hasTheora)
@@ -128,7 +133,7 @@ void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collaborat
 		if(pipe.read<char>()!=0)
 			{
 			/* Read a Theora packet from the client: */
-			OggPacket& theoraPacket=myCs->theoraPacketBuffer.startNewValue();
+			VideoPacket& theoraPacket=myCs->theoraPacketBuffer.startNewValue();
 			theoraPacket.read(pipe);
 			myCs->theoraPacketBuffer.postNewValue();
 			}
@@ -154,8 +159,8 @@ void AgoraServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Protoc
 		pipe.write<char>(1);
 		
 		/* Write the source client's Theora stream headers: */
-		for(int i=0;i<3;++i)
-			mySourceCs->theoraStreamHeaders[i].write(pipe);
+		pipe.write<unsigned int>(mySourceCs->theoraHeadersSize);
+		pipe.write<unsigned char>(mySourceCs->theoraHeaders,mySourceCs->theoraHeadersSize);
 		
 		/* Write the client's virtual video size: */
 		for(int i=0;i<2;++i)
@@ -181,6 +186,9 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 			const char* speexPacket=mySourceCs->speexPacketBuffer.getLockedSegment(i);
 			pipe.write<char>(speexPacket,mySourceCs->speexPacketSize);
 			}
+		
+		/* Write the source client's new head position: */
+		pipe.write<Scalar>(mySourceCs->headPosition.getComponents(),3);
 		}
 	
 	/* Check if the destination client expects streaming video from the source client: */

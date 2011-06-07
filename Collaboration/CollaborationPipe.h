@@ -1,7 +1,7 @@
 /***********************************************************************
 CollaborationPipe - Class defining the communication protocol between a
 collaboration client and a collaboration server.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -70,15 +70,13 @@ class CollaborationPipe:public Comm::ClusterPipe
 		/* Definition of client's active viewers and input devices in client's navigational coordinates: */
 		unsigned int numViewers; // Number of viewers defined by client
 		OGTransform* viewerStates; // States of client's viewers
+		#ifdef COLLABORATION_SHARE_DEVICES
 		unsigned int numInputDevices; // Number of input devices defined by client
 		OGTransform* inputDeviceStates; // States of client's input devices
+		#endif
 		
 		/* Constructors and destructors: */
-		ClientState(void) // Creates empty client state structure
-			:numViewers(0),viewerStates(0),
-			 numInputDevices(0),inputDeviceStates(0)
-			{
-			}
+		ClientState(void); // Creates empty client state structure
 		private:
 		ClientState(const ClientState&); // Prohibit copy constructor
 		ClientState& operator=(const ClientState&); // Prohibit assignment operator
@@ -86,7 +84,11 @@ class CollaborationPipe:public Comm::ClusterPipe
 		~ClientState(void);
 		
 		/* Methods: */
+		#ifdef COLLABORATION_SHARE_DEVICES
 		ClientState& resize(unsigned int newNumViewers,unsigned int newNumInputDevices); // Re-allocates the viewer and input device state arrays
+		#else
+		ClientState& resize(unsigned int newNumViewers); // Re-allocates the viewer state array
+		#endif
 		ClientState& updateFromVrui(void); // Updates the client state structure by reading Vrui's internal data structures
 		};
 	

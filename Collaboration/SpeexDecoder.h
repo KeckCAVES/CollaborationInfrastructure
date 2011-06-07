@@ -1,7 +1,7 @@
 /***********************************************************************
 SpeexDecoder - Class encapsulating an audio decoder using the SPEEX
 speech codec.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -26,12 +26,11 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Threads/Thread.h>
 #include <Threads/DropoutBuffer.h>
-#include <Sound/ALSAPCMDevice.h>
 #include <speex/speex.h>
 
 namespace Collaboration {
 
-class SpeexDecoder:public Sound::ALSAPCMDevice
+class SpeexDecoder
 	{
 	/* Elements: */
 	private:
@@ -39,16 +38,22 @@ class SpeexDecoder:public Sound::ALSAPCMDevice
 	Threads::DropoutBuffer<char>& speexPacketQueue; // Reference to queue of encoded SPEEX audio packets ready for pickup
 	SpeexBits speexBits; // SPEEX bit unpacking structure
 	size_t speexFrameSize; // Number of audio frames contained in an encoded SPEEX audio packet
-	signed short int* playbackBuffer; // Buffer to write uncompressed audio to the playback PCM device
 	Threads::Thread decodingThread; // The decoding thread
+	Threads::DropoutBuffer<signed short int> decodedPacketQueue; // Queue of decoded audio packets
 	
 	/* Private methods: */
 	void* decodingThreadMethod(void); // The decoding thread method
 	
 	/* Constructors and destructors: */
 	public:
-	SpeexDecoder(const char* playbackPCMDeviceName,size_t sSpeexFrameSize,Threads::DropoutBuffer<char>& sSpeexPacketQueue); // Creates a SPEEX decoder using the ALSA PCM device of the given name and the given SPEEX parameters and packet delivery queue
+	SpeexDecoder(size_t sSpeexFrameSize,Threads::DropoutBuffer<char>& sSpeexPacketQueue); // Creates a SPEEX decoder using the given SPEEX parameters and packet delivery queue and condition variable
 	~SpeexDecoder(void); // Destroys the SPEEX decoder
+	
+	/* Methods: */
+	Threads::DropoutBuffer<signed short int>& getDecodedPacketQueue(void) // Returns a reference to the decoded packet queue
+		{
+		return decodedPacketQueue;
+		}
 	};
 
 }

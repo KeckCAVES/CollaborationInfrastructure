@@ -645,6 +645,9 @@ std::pair<ProtocolServer*,int> CollaborationServer::loadProtocol(std::string pro
 		/* Try loading a protocol plug-in dynamically: */
 		try
 			{
+			#ifdef VERBOSE
+			std::cout<<"Loading protocol plug-in "<<protocolName<<"Server"<<std::endl;
+			#endif
 			result.first=protocolLoader.createObject((protocolName+"Server").c_str());
 			result.second=numProtocols;
 			
@@ -656,10 +659,14 @@ std::pair<ProtocolServer*,int> CollaborationServer::loadProtocol(std::string pro
 			unsigned int numMessages=result.first->getNumMessages();
 			for(unsigned int i=0;i<numMessages;++i)
 				messageTable.push_back(result.first);
+			#ifdef VERBOSE
+			std::cout<<"Protocol "<<protocolName<<" is assigned message IDs "<<result.first->messageIdBase<<" to "<<result.first->messageIdBase+numMessages-1<<std::endl;
+			#endif
 			}
 		catch(std::runtime_error err)
 			{
-			/* Ignore the error: */
+			/* Print an error message and carry on: */
+			std::cerr<<"CollaborationServer::loadProtocol: Caught exception "<<err.what()<<" while loading protocol "<<protocolName<<std::endl;
 			}
 		}
 	
@@ -668,6 +675,14 @@ std::pair<ProtocolServer*,int> CollaborationServer::loadProtocol(std::string pro
 
 void CollaborationServer::update(void)
 	{
+	{
+	/* Lock protocol list: */
+	Threads::Mutex::Lock protocolListLock(protocolListMutex);
+	
+	/* Process plug-in protocols: */
+	for(ProtocolList::iterator plIt=protocols.begin();plIt!=protocols.end();++plIt)
+		(*plIt)->beforeServerUpdate();
+	
 	{
 	/* Lock client list: */
 	Threads::Mutex::Lock clientListLock(clientListMutex);
@@ -789,9 +804,6 @@ void CollaborationServer::update(void)
 							pipe.writeMessage(CollaborationPipe::CLIENT_DISCONNECT);
 							pipe.write<unsigned int>(alIt->clientID);
 							
-							/* Process higher-level protocols: */
-							sendClientDisconnect(alIt->clientID,destClient->clientID,pipe);
-							
 							break;
 							}
 						}
@@ -908,6 +920,11 @@ void CollaborationServer::update(void)
 		actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,(*dclIt)->clientID,*dclIt));
 		}
 	}
+	
+	/* Process plug-in protocols: */
+	for(ProtocolList::iterator plIt=protocols.begin();plIt!=protocols.end();++plIt)
+		(*plIt)->afterServerUpdate();
+	}
 	}
 
 bool CollaborationServer::receiveConnectRequest(unsigned int clientID,CollaborationPipe& pipe)
@@ -937,10 +954,6 @@ void CollaborationServer::receiveClientUpdate(unsigned int clientID,Collaboratio
 	}
 
 void CollaborationServer::sendClientConnect(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe)
-	{
-	}
-
-void CollaborationServer::sendClientDisconnect(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe)
 	{
 	}
 

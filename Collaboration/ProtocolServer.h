@@ -81,7 +81,6 @@ class ProtocolServer
 	virtual void sendDisconnectReply(ClientState* cs,CollaborationPipe& pipe); // Hook called when the server sends a disconnect reply to a client
 	virtual void receiveClientUpdate(ClientState* cs,CollaborationPipe& pipe); // Hook called when the server receives a client's state update packet
 	virtual void sendClientConnect(ClientState* sourceCs,ClientState* destCs,CollaborationPipe& pipe); // Hook called when the server sends a connection message for client sourceClient to client destClient
-	virtual void sendClientDisconnect(ClientState* sourceCs,ClientState* destCs,CollaborationPipe& pipe); // Hook called when the server sends a disconnection message for client sourceClient to client destClient
 	virtual void sendServerUpdate(ClientState* destCs,CollaborationPipe& pipe); // Hook called when the server sends a state update to a client
 	virtual void sendServerUpdate(ClientState* sourceCs,ClientState* destCs,CollaborationPipe& pipe); // Hook called when the server sends a state update for client sourceClient to client destClient
 	
@@ -89,9 +88,11 @@ class ProtocolServer
 	virtual bool handleMessage(ClientState* cs,unsigned int messageId,CollaborationPipe& pipe); // Hook called when server receives unknown message from client; returns false to signal protocol error
 	virtual void connectClient(ClientState* cs); // Hook called when connection to a new client has been fully established
 	virtual void disconnectClient(ClientState* cs); // Hook called after a client has been disconnected (voluntarily or involuntarily)
-	virtual void beforeServerUpdate(ClientState* cs); // Hook called before the server sends state update messages to any client
+	virtual void beforeServerUpdate(void); // Hook called before the server sends state update messages
+	virtual void beforeServerUpdate(ClientState* cs); // Hook called for each client before the server sends state update messages
 	virtual void beforeServerUpdate(ClientState* destCs,CollaborationPipe& pipe); // Hook called right before the server sends a state update message to the given client
-	virtual void afterServerUpdate(ClientState* cs); // Hook called after the server completed all update messages to all clients
+	virtual void afterServerUpdate(ClientState* cs); // Hook called for each client after the server sent state update messages
+	virtual void afterServerUpdate(void); // Hook called after the server sent state update messages
 	};
 
 /*****************

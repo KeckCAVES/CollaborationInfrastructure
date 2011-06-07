@@ -1,7 +1,7 @@
 /***********************************************************************
 SpeexEncoder - Class encapsulating an audio encoder using the SPEEX
 speech codec.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -23,8 +23,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/SpeexEncoder.h>
 
-// DEBUGGING
-#include <iostream>
 #include <Sound/SoundDataFormat.h>
 
 namespace Collaboration {
@@ -40,24 +38,27 @@ void* SpeexEncoder::encodingThreadMethod(void)
 	
 	while(true)
 		{
-		/* Read raw audio data from the recording PCM device: */
-		size_t numFrames=read(recordingBuffer,speexFrameSize);
-		if(numFrames!=speexFrameSize) // Untreatable error; need to bail out
+		try
 			{
-			// DEBUGGING
-			std::cerr<<"SpeexEncoder: Error while reading from sound device; received "<<numFrames<<" frames instead of "<<speexFrameSize<<std::endl;
-			break;
+			/* Read raw audio data from the recording PCM device: */
+			size_t numFrames=read(recordingBuffer,speexFrameSize);
+			
+			/* Check for possible error conditions: */
+			if(numFrames==speexFrameSize&&speex_encode_int(speexState,recordingBuffer,&speexBits)>=0)
+				{
+				/* Write packed bits into the SPEEX packet queue: */
+				char* speexPacket=speexPacketQueue.getWriteSegment();
+				speex_bits_write(&speexBits,speexPacket,speexPacketSize);
+				speexPacketQueue.pushSegment();
+				speex_bits_reset(&speexBits);
+				}
 			}
-		
-		/* Encode the raw audio data into the SPEEX bit packer: */
-		if(speex_encode_int(speexState,recordingBuffer,&speexBits)<0)
-			break; // Untreatable error; need to bail out
-		
-		/* Write packed bits into the SPEEX packet queue: */
-		char* speexPacket=speexPacketQueue.getWriteSegment();
-		speex_bits_write(&speexBits,speexPacket,speexPacketSize);
-		speexPacketQueue.pushSegment();
-		speex_bits_reset(&speexBits);
+		catch(Sound::ALSAPCMDevice::OverrunError)
+			{
+			/* Restart the recording PCM device: */
+			prepare();
+			start();
+			}
 		}
 	
 	return 0;

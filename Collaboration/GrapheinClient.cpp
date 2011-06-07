@@ -1,7 +1,7 @@
 /***********************************************************************
 GrapheinClient - Client object to implement the Graphein shared
 annotation protocol.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -58,7 +58,7 @@ GrapheinClient::RemoteClientState::~RemoteClientState(void)
 		delete cIt->getDest();
 	}
 
-void GrapheinClient::RemoteClientState::display(GLContextData& contextData) const
+void GrapheinClient::RemoteClientState::glRenderAction(GLContextData& contextData) const
 	{
 	glPushAttrib(GL_ENABLE_BIT|GL_LINE_BIT);
 	glDisable(GL_LIGHTING);
@@ -99,7 +99,7 @@ Methods of class GrapheinClient::GrapheinTool:
 *********************************************/
 
 GrapheinClient::GrapheinTool::GrapheinTool(const Vrui::ToolFactory* factory,const Vrui::ToolInputAssignment& inputAssignment)
-	:Vrui::Tool(factory,inputAssignment),
+	:Vrui::UtilityTool(factory,inputAssignment),
 	 client(0),
 	 controlDialogPopup(0),lineWidthValue(0),colorBox(0),
 	 newLineWidth(3.0f),newColor(255,0,0),
@@ -109,7 +109,7 @@ GrapheinClient::GrapheinTool::GrapheinTool(const Vrui::ToolFactory* factory,cons
 	const GLMotif::StyleSheet* ss=Vrui::getWidgetManager()->getStyleSheet();
 	
 	/* Build the tool control dialog: */
-	controlDialogPopup=new GLMotif::PopupWindow("GrapheinToolControlDialog",Vrui::getWidgetManager(),"Annotation Tool Settings");
+	controlDialogPopup=new GLMotif::PopupWindow("GrapheinToolControlDialog",Vrui::getWidgetManager(),"Shared Curve Editor Settings");
 	controlDialogPopup->setResizableFlags(false,false);
 	
 	GLMotif::RowColumn* controlDialog=new GLMotif::RowColumn("ControlDialog",controlDialogPopup,false);
@@ -162,7 +162,7 @@ GrapheinClient::GrapheinTool::GrapheinTool(const Vrui::ToolFactory* factory,cons
 	controlDialog->manageChild();
 	
 	/* Pop up the control dialog: */
-	Vrui::popupPrimaryWidget(controlDialogPopup,Vrui::getNavigationTransformation().transform(Vrui::getDisplayCenter()));
+	Vrui::popupPrimaryWidget(controlDialogPopup);
 	}
 
 GrapheinClient::GrapheinTool::~GrapheinTool(void)
@@ -170,7 +170,7 @@ GrapheinClient::GrapheinTool::~GrapheinTool(void)
 	delete controlDialogPopup;
 	}
 
-void GrapheinClient::GrapheinTool::buttonCallback(int deviceIndex,int buttonIndex,Vrui::InputDevice::ButtonCallbackData* cbData)
+void GrapheinClient::GrapheinTool::buttonCallback(int,Vrui::InputDevice::ButtonCallbackData* cbData)
 	{
 	if(client==0)
 		return;
@@ -188,7 +188,7 @@ void GrapheinClient::GrapheinTool::buttonCallback(int deviceIndex,int buttonInde
 		newCurve->lineWidth=newLineWidth;
 		newCurve->color=newColor;
 		const Vrui::NavTransform& invNav=Vrui::getInverseNavigationTransformation();
-		lastPoint=invNav.transform(getDevicePosition(0));
+		lastPoint=invNav.transform(getButtonDevicePosition(0));
 		newCurve->vertices.push_back(lastPoint);
 		client->curves.setEntry(CurveHasher::Entry(currentCurveId,newCurve));
 		
@@ -223,7 +223,7 @@ void GrapheinClient::GrapheinTool::frame(void)
 		{
 		/* Update the current dragging point: */
 		const Vrui::NavTransform& invNav=Vrui::getInverseNavigationTransformation();
-		currentPoint=invNav.transform(getDevicePosition(0));
+		currentPoint=invNav.transform(getButtonDevicePosition(0));
 		
 		/* Check if the dragging point is far enough away from the most recent curve vertex: */
 		if(Geometry::sqrDist(currentPoint,lastPoint)>=Math::sqr(Vrui::getUiSize()*invNav.getScaling()))
@@ -300,8 +300,6 @@ Methods of class GrapheinClient:
 GrapheinClient::GrapheinClient(void)
 	:nextCurveId(0),curves(101)
 	{
-	/* Register callbacks with the tool manager: */
-	Vrui::getToolManager()->getToolCreationCallbacks().add(this,&GrapheinClient::toolCreationCallback);
 	}
 
 GrapheinClient::~GrapheinClient(void)
@@ -340,14 +338,20 @@ void GrapheinClient::sendConnectRequest(CollaborationPipe& pipe)
 void GrapheinClient::receiveConnectReply(CollaborationPipe& pipe)
 	{
 	/* Register the Graphein tool class: */
-	GrapheinToolFactory* grapheinToolFactory=new GrapheinToolFactory("GrapheinTool","Annotation Tool",0,*Vrui::getToolManager());
-	grapheinToolFactory->setNumDevices(1);
-	grapheinToolFactory->setNumButtons(0,1);
+	GrapheinToolFactory* grapheinToolFactory=new GrapheinToolFactory("GrapheinTool","Shared Curve Editor",Vrui::getToolManager()->loadClass("UtilityTool"),*Vrui::getToolManager());
+	grapheinToolFactory->setNumButtons(1);
+	grapheinToolFactory->setButtonFunction(0,"Draw Curves");
 	Vrui::getToolManager()->addClass(grapheinToolFactory,Vrui::ToolManager::defaultToolFactoryDestructor);
+	
+	/* Register callbacks with the tool manager: */
+	Vrui::getToolManager()->getToolCreationCallbacks().add(this,&GrapheinClient::toolCreationCallback);
 	}
 
 void GrapheinClient::receiveDisconnectReply(CollaborationPipe& pipe)
 	{
+	/* Uninstall tool manager callbacks: */
+	Vrui::getToolManager()->getToolCreationCallbacks().remove(this,&GrapheinClient::toolCreationCallback);
+	
 	/* Unregister the Graphein tool class before the client is unloaded: */
 	Vrui::getToolManager()->releaseClass("GrapheinTool");
 	}
@@ -427,7 +431,7 @@ void GrapheinClient::sendClientUpdate(CollaborationPipe& pipe)
 	}
 	}
 
-GrapheinClient::RemoteClientState* GrapheinClient::receiveClientConnect(CollaborationPipe& pipe)
+ProtocolClient::RemoteClientState* GrapheinClient::receiveClientConnect(CollaborationPipe& pipe)
 	{
 	/* Create a new remote client state object: */
 	RemoteClientState* newClientState=new RemoteClientState;
@@ -541,7 +545,7 @@ void GrapheinClient::frame(ProtocolClient::RemoteClientState* rcs)
 	{
 	}
 
-void GrapheinClient::display(GLContextData& contextData) const
+void GrapheinClient::glRenderAction(GLContextData& contextData) const
 	{
 	glPushAttrib(GL_ENABLE_BIT|GL_LINE_BIT);
 	glDisable(GL_LIGHTING);
@@ -560,7 +564,7 @@ void GrapheinClient::display(GLContextData& contextData) const
 	glPopAttrib();
 	}
 
-void GrapheinClient::display(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
+void GrapheinClient::glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
 	{
 	/* Get a handle on the Graphein state object: */
 	const RemoteClientState* myRcs=dynamic_cast<const RemoteClientState*>(rcs);
@@ -568,7 +572,7 @@ void GrapheinClient::display(const ProtocolClient::RemoteClientState* rcs,GLCont
 		Misc::throwStdErr("GrapheinClient::display: Remote client state object has mismatching type");
 	
 	/* Display the remote client's state: */
-	myRcs->display(contextData);
+	myRcs->glRenderAction(contextData);
 	}
 
 void GrapheinClient::toolCreationCallback(Vrui::ToolManager::ToolCreationCallbackData* cbData)

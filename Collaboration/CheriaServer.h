@@ -1,7 +1,7 @@
 /***********************************************************************
-GrapheinServer - Server object to implement the Graphein shared
-annotation protocol.
-Copyright (c) 2009 Oliver Kreylos
+CheriaServer - Server object to implement the Cheria input device
+distribution protocol.
+Copyright (c) 2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,28 +21,33 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef GRAPHEINSERVER_INCLUDED
-#define GRAPHEINSERVER_INCLUDED
+#ifndef CHERIASERVER_INCLUDED
+#define CHERIASERVER_INCLUDED
 
-#include <vector>
+#include <Misc/HashTable.h>
+#include <Misc/WriteBuffer.h>
+
 #include <Collaboration/ProtocolServer.h>
-
-#include <Collaboration/GrapheinPipe.h>
+#include <Collaboration/CheriaPipe.h>
 
 namespace Collaboration {
 
-class GrapheinServer:public ProtocolServer,public GrapheinPipe
+class CheriaServer:public ProtocolServer,public CheriaPipe
 	{
 	/* Embedded classes: */
-	protected:
+	private:
+	typedef Misc::HashTable<unsigned int,ServerDeviceState*> ClientDeviceMap; // Map from client device IDs to server device states
+	typedef Misc::HashTable<unsigned int,ServerToolState*> ClientToolMap; // Map from client tool IDs to server tools
+	
 	class ClientState:public ProtocolServer::ClientState
 		{
-		friend class GrapheinServer;
+		friend class CheriaServer;
 		
 		/* Elements: */
 		private:
-		CurveHasher curves; // The set of curves currently owned by the client
-		CurveActionList actions; // The queue of pending curve actions
+		ClientDeviceMap clientDevices; // Map of devices managed by the client
+		ClientToolMap clientTools; // Map of tools managed by the client
+		Misc::WriteBuffer messageBuffer; // Buffer for outgoing messages from this client
 		
 		/* Constructors and destructors: */
 		ClientState(void);
@@ -51,8 +56,8 @@ class GrapheinServer:public ProtocolServer,public GrapheinPipe
 	
 	/* Constructors and destructors: */
 	public:
-	GrapheinServer(void); // Creates an Graphein server object
-	virtual ~GrapheinServer(void); // Destroys the Graphein server object
+	CheriaServer(void); // Creates a Cheria server object
+	virtual ~CheriaServer(void); // Destroys the Cheria server object
 	
 	/* Methods from ProtocolServer: */
 	virtual const char* getName(void) const;
@@ -60,6 +65,7 @@ class GrapheinServer:public ProtocolServer,public GrapheinPipe
 	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe);
 	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
 	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual void beforeServerUpdate(ProtocolServer::ClientState* cs);
 	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
 	};

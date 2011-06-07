@@ -63,8 +63,20 @@ const char* GrapheinServer::getName(void) const
 	return protocolName;
 	}
 
+unsigned int GrapheinServer::getNumMessages(void) const
+	{
+	return MESSAGES_END;
+	}
+
 ProtocolServer::ClientState* GrapheinServer::receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe)
 	{
+	/* Check the protocol message length: */
+	if(protocolMessageLength!=sizeof(unsigned int))
+		{
+		/* Fatal error; stop communicating with client entirely: */
+		Misc::throwStdErr("GrapheinServer::receiveConnectRequest: Protocol error; received %u bytes instead of %u",(unsigned int)protocolMessageLength,(unsigned int)sizeof(unsigned int));
+		}
+	
 	/* Receive the client's protocol version: */
 	unsigned int clientProtocolVersion=pipe.read<unsigned int>();
 	

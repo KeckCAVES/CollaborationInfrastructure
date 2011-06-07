@@ -25,6 +25,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string.h>
 #include <stdlib.h>
 #include <iostream>
+#include <GLMotif/PopupMenu.h>
+#include <GLMotif/Menu.h>
+#include <GLMotif/ToggleButton.h>
 #include <Vrui/Vrui.h>
 #include <Vrui/Application.h>
 
@@ -35,6 +38,10 @@ class CollaborationClientTest:public Vrui::Application
 	/* Elements: */
 	private:
 	Collaboration::CollaborationClient* collaborationClient; // Pointer to the collaboration client object
+	GLMotif::PopupMenu* mainMenu; // The program's main menu
+	
+	/* Private methods: */
+	GLMotif::PopupMenu* createMainMenu(void); // Creates the program's main menu
 	
 	/* Constructors and destructors: */
 	public:
@@ -44,11 +51,33 @@ class CollaborationClientTest:public Vrui::Application
 	/* Methods: */
 	virtual void frame(void);
 	virtual void display(GLContextData& contextData) const;
+	virtual void sound(ALContextData& contextData) const;
+	void showClientDialogCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
 	};
+
+GLMotif::PopupMenu* CollaborationClientTest::createMainMenu(void)
+	{
+	/* Create a popup shell to hold the main menu: */
+	GLMotif::PopupMenu* mainMenuPopup=new GLMotif::PopupMenu("MainMenuPopup",Vrui::getWidgetManager());
+	mainMenuPopup->setTitle("Collaboration Client Test");
+	
+	/* Create the main menu itself: */
+	GLMotif::Menu* mainMenu=new GLMotif::Menu("MainMenu",mainMenuPopup,false);
+	
+	/* Create a button: */
+	GLMotif::ToggleButton* showClientDialogToggle=new GLMotif::ToggleButton("ShowClientDialogToggle",mainMenu,"Show Client Dialog");
+	showClientDialogToggle->setToggle(false);
+	showClientDialogToggle->getValueChangedCallbacks().add(this,&CollaborationClientTest::showClientDialogCallback);
+	
+	/* Finish building the main menu: */
+	mainMenu->manageChild();
+	
+	return mainMenuPopup;
+	}
 
 CollaborationClientTest::CollaborationClientTest(int& argc,char**& argv,char**& appDefaults)
 	:Vrui::Application(argc,argv,appDefaults),
-	 collaborationClient(0)
+	 collaborationClient(0),mainMenu(0)
 	{
 	/* Create a configuration object: */
 	Collaboration::CollaborationClient::Configuration* cfg=new Collaboration::CollaborationClient::Configuration;
@@ -89,12 +118,19 @@ CollaborationClientTest::CollaborationClientTest(int& argc,char**& argv,char**& 
 	/* Initiate the collaboration protocol: */
 	collaborationClient->connect();
 	
+	/* Create the main menu: */
+	mainMenu=createMainMenu();
+	Vrui::setMainMenu(mainMenu);
+	
 	/* Initialize the navigation transformation: */
 	Vrui::setNavigationTransformation(Vrui::Point(0.0,0.0,0.0),Vrui::Scalar(1.5),Vrui::Vector(0.0,0.0,1.0));
 	}
 
 CollaborationClientTest::~CollaborationClientTest(void)
 	{
+	/* Delete the user interface: */
+	delete mainMenu;
+	
 	/* Delete the collaboration client: */
 	delete collaborationClient;
 	}
@@ -138,6 +174,20 @@ void CollaborationClientTest::display(GLContextData& contextData) const
 	
 	/* Call the collaboration client's display method: */
 	collaborationClient->display(contextData);
+	}
+
+void CollaborationClientTest::sound(ALContextData& contextData) const
+	{
+	/* Call the collaboration client's sound method: */
+	collaborationClient->sound(contextData);
+	}
+
+void CollaborationClientTest::showClientDialogCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	if(cbData->set)
+		collaborationClient->showDialog();
+	else
+		collaborationClient->hideDialog();
 	}
 
 int main(int argc,char* argv[])

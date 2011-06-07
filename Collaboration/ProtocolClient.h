@@ -3,7 +3,7 @@ ProtocolClient - Abstract base class for the client-side components of
 collaboration protocols that can be added to the base protocol
 implemented by CollaborationClient and CollaborationServer, to simplify
 creating complex higher-level protocols.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -35,6 +35,10 @@ template <class ManagedClassParam>
 class ObjectLoader;
 }
 class GLContextData;
+namespace GLMotif {
+class RowColumn;
+}
+class ALContextData;
 namespace Collaboration {
 class CollaborationPipe;
 class CollaborationClient;
@@ -73,6 +77,8 @@ class ProtocolClient
 	virtual const char* getName(void) const =0; // Returns the protocol's name; must be unique and match exactly the name returned by the server engine
 	virtual unsigned int getNumMessages(void) const; // Returns the number of protocol messages used by this protocol
 	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection); // Called when the protocol client is registered with a collaboration client
+	virtual bool haveSettingsDialog(void) const; // Method to inquire whether the protocol wants to add user interface elements to the collaboration client's settings dialog; called after receiveConnectReply
+	virtual void buildSettingsDialog(GLMotif::RowColumn* settingsDialog); // Method to add user interface elements to the collaboration client's settings dialog; called after haveSettingsDialog returns true
 	
 	/***********************************
 	Client protocol engine hook methods:
@@ -86,7 +92,6 @@ class ProtocolClient
 	virtual void receiveDisconnectReply(CollaborationPipe& pipe); // Hook called when the client receives a disconnection reply message from the server
 	virtual void sendClientUpdate(CollaborationPipe& pipe); // Hook called when the client sends a client state update packet
 	virtual RemoteClientState* receiveClientConnect(CollaborationPipe& pipe); // Hook called when the client receives a connection message for a new remote client
-	virtual void receiveClientDisconnect(RemoteClientState* rcs,CollaborationPipe& pipe); // Hook called when the client receives a disconnection message for the given remote client
 	virtual void receiveServerUpdate(CollaborationPipe& pipe); // Hook called when the client receives a state update packet from the server
 	virtual void receiveServerUpdate(RemoteClientState* rcs,CollaborationPipe& pipe); // Hook called when the client receives a state update packet for the given remote client from the server
 	
@@ -98,8 +103,10 @@ class ProtocolClient
 	virtual void disconnectClient(RemoteClientState* rcs); // Hook called right before a client is completely disconnected
 	virtual void frame(void); // Hook called during client's frame method
 	virtual void frame(RemoteClientState* rcs); // Hook called for each remote client sharing this protocol, during client's frame method
-	virtual void display(GLContextData& contextData) const; // Hook called during client's display method
-	virtual void display(const RemoteClientState* rcs,GLContextData& contextData) const; // Hook called for each remote client sharing this protocol, during client's display method
+	virtual void glRenderAction(GLContextData& contextData) const; // Hook called during client's display method
+	virtual void glRenderAction(const RemoteClientState* rcs,GLContextData& contextData) const; // Hook called for each remote client sharing this protocol, during client's display method
+	virtual void alRenderAction(ALContextData& contextData) const; // Hook called during client's sound method
+	virtual void alRenderAction(const RemoteClientState* rcs,ALContextData& contextData) const; // Hook called for each remote client sharing this protocol, during client's sound method
 	};
 
 /*****************

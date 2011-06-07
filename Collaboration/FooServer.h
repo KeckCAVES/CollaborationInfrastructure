@@ -34,11 +34,21 @@ class FooServer:public ProtocolServer
 	protected:
 	class ClientState:public ProtocolServer::ClientState // Class representing server-side state of a connected client
 		{
+		friend class FooServer;
+		
+		/* Elements: */
+		private:
+		unsigned int bracketLevel; // Counter to check proper nesting of before/after server update calls
+		
 		/* Constructors and destructors: */
 		public:
 		ClientState(void);
 		virtual ~ClientState(void);
 		};
+	
+	/* Elements: */
+	protected:
+	unsigned int bracketLevel; // Counter to check proper nesting of before/after server update calls
 	
 	/* Constructors and destructors: */
 	public:
@@ -55,14 +65,16 @@ class FooServer:public ProtocolServer
 	virtual void sendDisconnectReply(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
 	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
 	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
-	virtual void sendClientDisconnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual void sendServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual bool handleMessage(ProtocolServer::ClientState* cs,unsigned int messageId,CollaborationPipe& pipe);
 	virtual void connectClient(ProtocolServer::ClientState* cs);
 	virtual void disconnectClient(ProtocolServer::ClientState* cs);
+	virtual void beforeServerUpdate(void);
+	virtual void beforeServerUpdate(ProtocolServer::ClientState* cs);
 	virtual void beforeServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
 	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
+	virtual void afterServerUpdate(void);
 	};
 
 }

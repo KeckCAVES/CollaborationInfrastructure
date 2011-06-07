@@ -28,9 +28,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/CollaborationPipe.h>
 
-#include <Collaboration/FooCrapSender.h>
+#define DUMP_PROTOCOL 1
 
-#define DUMP_PROTOCOL 0
+#include <Collaboration/FooCrapSender.h>
 
 namespace Collaboration {
 
@@ -39,6 +39,7 @@ Methods of class FooServer::ClientState:
 ***************************************/
 
 FooServer::ClientState::ClientState(void)
+	:bracketLevel(0)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::ClientState::ClientState"<<std::endl;
@@ -50,6 +51,9 @@ FooServer::ClientState::~ClientState(void)
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::ClientState::~ClientState"<<std::endl;
 	#endif
+	
+	if(bracketLevel!=0)
+		std::cerr<<"FooServer::ClientState::~ClientState: Bracket level is "<<bracketLevel<<std::endl;
 	}
 
 /**************************
@@ -57,6 +61,7 @@ Methods of class FooServer:
 **************************/
 
 FooServer::FooServer(void)
+	:bracketLevel(0)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::FooServer"<<std::endl;
@@ -68,6 +73,9 @@ FooServer::~FooServer(void)
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::~FooServer"<<std::endl;
 	#endif
+	
+	if(bracketLevel!=0)
+		std::cerr<<"FooServer::~FooServer: Bracket level is "<<bracketLevel<<std::endl;
 	}
 
 const char* FooServer::getName(void) const
@@ -178,29 +186,15 @@ void FooServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Protocol
 	sendRandomCrap(pipe);
 	}
 
-void FooServer::sendClientDisconnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
-	{
-	#if DUMP_PROTOCOL
-	std::cout<<"FooServer::sendClientDisconnect"<<std::endl;
-	#endif
-	
-	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
-	ClientState* myDestCs=dynamic_cast<ClientState*>(destCs);
-	if(mySourceCs==0||myDestCs==0)
-		Misc::throwStdErr("FooServer::sendClientDisconnect: Mismatching client state object type");
-	
-	sendRandomCrap(pipe);
-	}
-
 void FooServer::sendServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
-	std::cout<<"FooServer::sendServerUpdate"<<std::endl;
+	std::cout<<"FooServer::sendServerUpdate(destCs)"<<std::endl;
 	#endif
 	
 	ClientState* myDestCs=dynamic_cast<ClientState*>(destCs);
 	if(myDestCs==0)
-		Misc::throwStdErr("FooServer::sendServerUpdate: Mismatching client state object type");
+		Misc::throwStdErr("FooServer::sendServerUpdate(destCs): Mismatching client state object type");
 	
 	sendRandomCrap(pipe);
 	}
@@ -208,13 +202,13 @@ void FooServer::sendServerUpdate(ProtocolServer::ClientState* destCs,Collaborati
 void FooServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
-	std::cout<<"FooServer::sendServerUpdate"<<std::endl;
+	std::cout<<"FooServer::sendServerUpdate(sourceCs,destCs)"<<std::endl;
 	#endif
 	
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
 	ClientState* myDestCs=dynamic_cast<ClientState*>(destCs);
 	if(mySourceCs==0||myDestCs==0)
-		Misc::throwStdErr("FooServer::sendServerUpdate: Mismatching client state object type");
+		Misc::throwStdErr("FooServer::sendServerUpdate(sourceCs,destCs): Mismatching client state object type");
 	
 	sendRandomCrap(pipe);
 	}
@@ -256,15 +250,44 @@ void FooServer::disconnectClient(ProtocolServer::ClientState* cs)
 		Misc::throwStdErr("FooServer::disconnectClient: Mismatching client state object type");
 	}
 
+void FooServer::beforeServerUpdate(void)
+	{
+	#if DUMP_PROTOCOL
+	// std::cout<<"FooServer::beforeServerUpdate()"<<std::endl;
+	#endif
+	
+	if(bracketLevel!=0)
+		std::cerr<<"FooServer::beforeServerUpdate(): Bracket level is "<<bracketLevel<<std::endl;
+	++bracketLevel;
+	}
+
+void FooServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooServer::beforeServerUpdate(cs)"<<std::endl;
+	#endif
+	
+	ClientState* myCs=dynamic_cast<ClientState*>(cs);
+	if(myCs==0)
+		Misc::throwStdErr("FooServer::beforeServerUpdate(cs): Mismatching client state object type");
+	
+	if(myCs->bracketLevel!=0)
+		std::cerr<<"FooServer::beforeServerUpdate(cs): Client bracket level is "<<myCs->bracketLevel<<std::endl;
+	++myCs->bracketLevel;
+	}
+
 void FooServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
-	std::cout<<"FooServer::beforeServerUpdate"<<std::endl;
+	std::cout<<"FooServer::beforeServerUpdate(destCs,pipe)"<<std::endl;
 	#endif
 	
 	ClientState* myDestCs=dynamic_cast<ClientState*>(destCs);
 	if(myDestCs==0)
-		Misc::throwStdErr("FooServer::beforeServerUpdate: Mismatching client state object type");
+		Misc::throwStdErr("FooServer::beforeServerUpdate(destCs,pipe): Mismatching client state object type");
+	
+	if(myDestCs->bracketLevel!=1)
+		std::cerr<<"FooServer::beforeServerUpdate(destCs,pipe): Client bracket level is "<<myDestCs->bracketLevel<<std::endl;
 	
 	/* Need to wrap our crap into an actual message packet: */
 	pipe.writeMessage(getMessageIdBase());
@@ -274,12 +297,27 @@ void FooServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,Collabora
 void FooServer::afterServerUpdate(ProtocolServer::ClientState* cs)
 	{
 	#if DUMP_PROTOCOL
-	std::cout<<"FooServer::afterServerUpdate"<<std::endl;
+	std::cout<<"FooServer::afterServerUpdate(cs)"<<std::endl;
 	#endif
 	
 	ClientState* myCs=dynamic_cast<ClientState*>(cs);
 	if(myCs==0)
-		Misc::throwStdErr("FooServer::afterServerUpdate: Mismatching client state object type");
+		Misc::throwStdErr("FooServer::afterServerUpdate(cs): Mismatching client state object type");
+	
+	--myCs->bracketLevel;
+	if(myCs->bracketLevel!=0)
+		std::cerr<<"FooServer::afterServerUpdate(cs): Client bracket level is "<<myCs->bracketLevel<<std::endl;
+	}
+
+void FooServer::afterServerUpdate(void)
+	{
+	#if DUMP_PROTOCOL
+	// std::cout<<"FooServer::afterServerUpdate()"<<std::endl;
+	#endif
+	
+	--bracketLevel;
+	if(bracketLevel!=0)
+		std::cerr<<"FooServer::afterServerUpdate(): Bracket level is "<<bracketLevel<<std::endl;
 	}
 
 }

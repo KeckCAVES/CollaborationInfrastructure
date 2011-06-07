@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -37,8 +37,12 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <GL/GLFont.h>
 #include <GL/GLGeometryWrappers.h>
 #include <GL/GLTransformationWrappers.h>
+#include <GLMotif/WidgetManager.h>
+#include <GLMotif/StyleSheet.h>
 #include <GLMotif/PopupWindow.h>
 #include <GLMotif/RowColumn.h>
+#include <GLMotif/Margin.h>
+#include <GLMotif/Separator.h>
 #include <GLMotif/TextField.h>
 #include <GLMotif/ToggleButton.h>
 #include <Vrui/Vrui.h>
@@ -107,6 +111,268 @@ void CollaborationClient::ServerState::resize(unsigned int newNumClients)
 /************************************
 Methods of class CollaborationClient:
 ************************************/
+
+void CollaborationClient::createClientDialog(void)
+	{
+	GLMotif::WidgetManager* wm=Vrui::getWidgetManager();
+	const GLMotif::StyleSheet* ss=wm->getStyleSheet();
+	
+	/* Create the remote client list dialog window: */
+	clientDialogPopup=new GLMotif::PopupWindow("ClientDialogPopup",wm,"Collaboration Client");
+	clientDialogPopup->setResizableFlags(true,false);
+	
+	GLMotif::RowColumn* clientDialog=new GLMotif::RowColumn("ClientDialog",clientDialogPopup,false);
+	clientDialog->setOrientation(GLMotif::RowColumn::VERTICAL);
+	clientDialog->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+	clientDialog->setNumMinorWidgets(1);
+	
+	GLMotif::Margin* showSettingsMargin=new GLMotif::Margin("ShowSettingsMargin",clientDialog,false);
+	showSettingsMargin->setAlignment(GLMotif::Alignment::LEFT);
+	
+	showSettingsToggle=new GLMotif::ToggleButton("ShowSettingsToggle",showSettingsMargin,"Show Settings");
+	showSettingsToggle->setBorderWidth(0.0f);
+	showSettingsToggle->setHAlignment(GLFont::Left);
+	showSettingsToggle->setToggle(false);
+	showSettingsToggle->getValueChangedCallbacks().add(this,&CollaborationClient::showSettingsToggleValueChangedCallback);
+	
+	showSettingsMargin->manageChild();
+	
+	GLMotif::RowColumn* remoteClientsTitle=new GLMotif::RowColumn("RemoteClientsTitle",clientDialog,false);
+	remoteClientsTitle->setOrientation(GLMotif::RowColumn::HORIZONTAL);
+	remoteClientsTitle->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+	remoteClientsTitle->setNumMinorWidgets(1);
+	
+	new GLMotif::Separator("Sep1",remoteClientsTitle,GLMotif::Separator::HORIZONTAL,ss->fontHeight,GLMotif::Separator::LOWERED);
+	new GLMotif::Label("Title",remoteClientsTitle,"Remote Clients");
+	new GLMotif::Separator("Sep2",remoteClientsTitle,GLMotif::Separator::HORIZONTAL,ss->fontHeight,GLMotif::Separator::LOWERED);
+	
+	remoteClientsTitle->manageChild();
+	
+	/* Create the client list widget: */
+	clientListRowColumn=new GLMotif::RowColumn("ClientListRowColumn",clientDialog);
+	clientListRowColumn->setOrientation(GLMotif::RowColumn::VERTICAL);
+	clientListRowColumn->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+	clientListRowColumn->setNumMinorWidgets(3);
+	clientListRowColumn->setColumnWeight(0,1.0f);
+	
+	clientDialog->manageChild();
+	}
+
+void CollaborationClient::createSettingsDialog(void)
+	{
+	GLMotif::WidgetManager* wm=Vrui::getWidgetManager();
+	const GLMotif::StyleSheet* ss=wm->getStyleSheet();
+	
+	/* Create the settings dialog window: */
+	settingsDialogPopup=new GLMotif::PopupWindow("SettingsDialogPopup",wm,"Collaboration Client Settings");
+	settingsDialogPopup->setCloseButton(true);
+	settingsDialogPopup->getCloseCallbacks().add(this,&CollaborationClient::settingsDialogCloseCallback);
+	settingsDialogPopup->setResizableFlags(false,false);
+	
+	GLMotif::RowColumn* settingsDialog=new GLMotif::RowColumn("SettingsDialog",settingsDialogPopup,false);
+	settingsDialog->setOrientation(GLMotif::RowColumn::VERTICAL);
+	settingsDialog->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+	settingsDialog->setNumMinorWidgets(1);
+	
+	/***************************************************
+	Create controls for the collaboration client itself:
+	***************************************************/
+	
+	GLMotif::Margin* togglesMargin=new GLMotif::Margin("TogglesMargin",settingsDialog,false);
+	togglesMargin->setAlignment(GLMotif::Alignment::LEFT);
+	
+	GLMotif::RowColumn* togglesBox=new GLMotif::RowColumn("TogglesBox",togglesMargin,false);
+	togglesBox->setOrientation(GLMotif::RowColumn::HORIZONTAL);
+	togglesBox->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+	togglesBox->setNumMinorWidgets(1);
+	
+	GLMotif::ToggleButton* fixGlyphScalingToggle=new GLMotif::ToggleButton("FixGlyphScalingToggle",togglesBox,"Fix Glyph Scaling");
+	fixGlyphScalingToggle->setBorderWidth(0.0f);
+	fixGlyphScalingToggle->setHAlignment(GLFont::Left);
+	fixGlyphScalingToggle->setToggle(fixGlyphScaling);
+	fixGlyphScalingToggle->getValueChangedCallbacks().add(this,&CollaborationClient::fixGlyphScalingToggleValueChangedCallback);
+	
+	GLMotif::ToggleButton* renderRemoteEnvironmentsToggle=new GLMotif::ToggleButton("RenderRemoteEnvironmentsToggle",togglesBox,"Render Remote Environments");
+	renderRemoteEnvironmentsToggle->setBorderWidth(0.0f);
+	renderRemoteEnvironmentsToggle->setHAlignment(GLFont::Left);
+	renderRemoteEnvironmentsToggle->setToggle(renderRemoteEnvironments);
+	renderRemoteEnvironmentsToggle->getValueChangedCallbacks().add(this,&CollaborationClient::renderRemoteEnvironmentsToggleValueChangedCallback);
+	
+	togglesBox->manageChild();
+	
+	togglesMargin->manageChild();
+	
+	/******************************************************************
+	Create controls for all registered protocol clients that want them:
+	******************************************************************/
+	
+	/* Process all protocols: */
+	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
+		if((*pIt)->haveSettingsDialog())
+			{
+			/* Create a divider with the protocol plug-in's name: */
+			GLMotif::RowColumn* protocolPluginTitle=new GLMotif::RowColumn("ProtocolPluginTitle",settingsDialog,false);
+			protocolPluginTitle->setOrientation(GLMotif::RowColumn::HORIZONTAL);
+			protocolPluginTitle->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+			protocolPluginTitle->setNumMinorWidgets(1);
+			
+			new GLMotif::Separator("Sep1",protocolPluginTitle,GLMotif::Separator::HORIZONTAL,ss->fontHeight,GLMotif::Separator::LOWERED);
+			new GLMotif::Label("Title",protocolPluginTitle,(*pIt)->getName());
+			new GLMotif::Separator("Sep2",protocolPluginTitle,GLMotif::Separator::HORIZONTAL,ss->fontHeight,GLMotif::Separator::LOWERED);
+			
+			protocolPluginTitle->manageChild();
+			
+			/* Create the protocol plug-in's controls: */
+			(*pIt)->buildSettingsDialog(settingsDialog);
+			}
+	
+	settingsDialog->manageChild();
+	}
+
+void CollaborationClient::showSettingsDialog(void)
+	{
+	typedef GLMotif::WidgetManager::Transformation WTransform;
+	typedef WTransform::Vector WVector;
+	
+	GLMotif::WidgetManager* wm=Vrui::getWidgetManager();
+	
+	/* Open the settings dialog right next to the client dialog: */
+	WTransform transform=wm->calcWidgetTransformation(clientDialogPopup);
+	const GLMotif::Box& box=clientDialogPopup->getExterior();
+	WVector offset(box.origin[0]+box.size[0],box.origin[1]+box.size[1],0.0f);
+	
+	offset[0]-=settingsDialogPopup->getExterior().origin[0];
+	offset[1]-=settingsDialogPopup->getExterior().origin[1]+settingsDialogPopup->getExterior().size[1];
+	transform*=WTransform::translate(offset);
+	wm->popupPrimaryWidget(settingsDialogPopup,transform);
+	}
+
+void CollaborationClient::showSettingsToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	if(cbData->set)
+		{
+		/* Show the settings dialog: */
+		showSettingsDialog();
+		}
+	else
+		{
+		/* Hide the settings dialog: */
+		Vrui::popdownPrimaryWidget(settingsDialogPopup);
+		}
+	}
+
+void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	if(cbData->set)
+		{
+		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
+		
+		if(followClientIndex>=0)
+			{
+			if(newClientIndex!=followClientIndex)
+				{
+				/* Unset the previously set toggle: */
+				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
+				if(oldToggle!=0)
+					oldToggle->setToggle(false);
+				
+				/* Follow the new client: */
+				followClientIndex=newClientIndex;
+				}
+			}
+		else if(faceClientIndex>=0)
+			{
+			/* Unset the previously set toggle: */
+			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
+			if(oldToggle!=0)
+				oldToggle->setToggle(false);
+			
+			/* Stop facing the old client: */
+			faceClientIndex=-1;
+			
+			/* Follow the new client: */
+			followClientIndex=newClientIndex;
+			}
+		else
+			{
+			/* Try to enable following: */
+			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
+				followClientIndex=newClientIndex;
+			else
+				cbData->toggle->setToggle(false);
+			}
+		}
+	else if(followClientIndex>=0)
+		{
+		/* Disable following: */
+		followClientIndex=-1;
+		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+		}
+	}
+
+void CollaborationClient::faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	if(cbData->set)
+		{
+		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
+		
+		if(faceClientIndex>=0)
+			{
+			if(newClientIndex!=faceClientIndex)
+				{
+				/* Unset the previously set toggle: */
+				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
+				if(oldToggle!=0)
+					oldToggle->setToggle(false);
+				
+				/* Face the new client: */
+				faceClientIndex=newClientIndex;
+				}
+			}
+		else if(followClientIndex>=0)
+			{
+			/* Unset the previously set toggle: */
+			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
+			if(oldToggle!=0)
+				oldToggle->setToggle(false);
+			
+			/* Stop following the old client: */
+			followClientIndex=-1;
+			
+			/* Face the new client: */
+			faceClientIndex=newClientIndex;
+			}
+		else
+			{
+			/* Try to enable facing: */
+			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
+				faceClientIndex=newClientIndex;
+			else
+				cbData->toggle->setToggle(false);
+			}
+		}
+	else if(faceClientIndex>=0)
+		{
+		/* Disable facing: */
+		faceClientIndex=-1;
+		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+		}
+	}
+
+void CollaborationClient::fixGlyphScalingToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	fixGlyphScaling=cbData->set;
+	}
+
+void CollaborationClient::renderRemoteEnvironmentsToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+	{
+	renderRemoteEnvironments=cbData->set;
+	}
+
+void CollaborationClient::settingsDialogCloseCallback(Misc::CallbackData* cbData)
+	{
+	showSettingsToggle->setToggle(false);
+	}
 
 void* CollaborationClient::communicationThreadMethod(void)
 	{
@@ -186,18 +452,8 @@ void* CollaborationClient::communicationThreadMethod(void)
 					/* Read the disconnected client's ID: */
 					unsigned int clientID=pipe->read<unsigned int>();
 					
-					/* Get the client's state object: */
-					Client* client=clientHash.getEntry(clientID).getDest();
-					
-					/* Process plug-in protocols: */
-					for(Client::RemoteClientProtocolList::iterator pIt=client->protocols.begin();pIt!=client->protocols.end();++pIt)
-						pIt->protocol->receiveClientDisconnect(pIt->protocolClientState,*pipe);
-					
-					/* Process higher-level protocols: */
-					receiveClientDisconnect(clientID);
-					
 					{
-					/* Ask to have the new client removed from the list: */
+					/* Ask to have the client removed from the list: */
 					Threads::Mutex::Lock clientListLock(clientListMutex);
 					clientHash.removeEntry(clientHash.findEntry(clientID));
 					actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,clientID,0));
@@ -358,7 +614,8 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 	 pipe(new CollaborationPipe(configuration->cfg.retrieveString("./serverHostName").c_str(),configuration->cfg.retrieveValue<int>("./serverPortId"),Vrui::openPipe())),
 	 clientHash(17),
 	 followClientIndex(-1),faceClientIndex(-1),
-	 remoteClientDialogPopup(0),clientListRowColumn(0),
+	 clientDialogPopup(0),showSettingsToggle(0),clientListRowColumn(0),
+	 settingsDialogPopup(0),
 	 fixGlyphScaling(false),renderRemoteEnvironments(false)
 	{
 	typedef std::vector<std::string> StringList;
@@ -373,11 +630,15 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 	
 	/* Initialize the remote viewer and input device glyphs early: */
 	viewerGlyph.enable(Vrui::Glyph::CROSSBALL,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
+	#ifdef COLLABORATION_SHARE_DEVICES
 	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
+	#endif
 	
 	/* Load persistent configuration data: */
 	viewerGlyph.configure(configuration->cfg,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
+	#ifdef COLLABORATION_SHARE_DEVICES
 	inputDeviceGlyph.configure(configuration->cfg,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
+	#endif
 	fixGlyphScaling=configuration->cfg.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
 	renderRemoteEnvironments=configuration->cfg.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
 	
@@ -385,22 +646,17 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
 		messageTable.push_back(0);
 	
-	/* Create the remote client list dialog window: */
-	remoteClientDialogPopup=new GLMotif::PopupWindow("RemoteClientDialogPopup",Vrui::getWidgetManager(),"Remote Clients");
-	remoteClientDialogPopup->setResizableFlags(true,false);
-	
-	/* Create the client list widget: */
-	clientListRowColumn=new GLMotif::RowColumn("ClientListRowColumn",remoteClientDialogPopup);
-	clientListRowColumn->setOrientation(GLMotif::RowColumn::VERTICAL);
-	clientListRowColumn->setPacking(GLMotif::RowColumn::PACK_TIGHT);
-	clientListRowColumn->setNumMinorWidgets(3);
-	clientListRowColumn->setColumnWeight(0,1.0f);
-	
 	/* Register all protocols listed in the configuration file section: */
+	#ifdef VERBOSE
+	std::cout<<"Registering protocols:"<<std::endl;
+	#endif
 	StringList protocolNames=configuration->cfg.retrieveValue<StringList>("./protocols",StringList());
 	for(StringList::const_iterator pnIt=protocolNames.begin();pnIt!=protocolNames.end();++pnIt)
 		{
 		/* Load a protocol plug-in: */
+		#ifdef VERBOSE
+		std::cout<<"  "<<*pnIt<<": ";
+		#endif
 		try
 			{
 			ProtocolClient* newProtocol=protocolLoader.createObject((*pnIt+"Client").c_str());
@@ -411,10 +667,17 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 			
 			/* Append the new protocol plug-in to the list: */
 			protocols.push_back(newProtocol);
+			
+			#ifdef VERBOSE
+			std::cout<<"OK"<<std::endl;
+			#endif
 			}
 		catch(std::runtime_error err)
 			{
 			/* Ignore the error and the protocol: */
+			#ifdef VERBOSE
+			std::cout<<"Failed due to excpetion "<<err.what()<<std::endl;
+			#endif
 			}
 		}
 	}
@@ -447,13 +710,18 @@ CollaborationClient::~CollaborationClient(void)
 	
 	delete pipe;
 	
+	/* Delete the user interface: */
+	delete clientDialogPopup;
+	delete settingsDialogPopup;
+	
+	/* Disconnect all remote clients: */
+	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+		delete *clIt;
+	
 	/* Delete all protocol plug-ins: */
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
 		if(!protocolLoader.isManaged(*pIt))
 			delete *pIt;
-	
-	/* Delete the user interface: */
-	delete remoteClientDialogPopup;
 	
 	/* Delete the configuration object: */
 	delete configuration;
@@ -475,6 +743,10 @@ void CollaborationClient::connect(void)
 		clientNameS="Anonymous Coward";
 	std::string clientName=configuration->cfg.retrieveString("./clientName",clientNameS);
 	
+	#ifdef VERBOSE
+	std::cout<<"Connecting to server "<<""<<" under client name "<<clientName<<std::endl;
+	#endif
+	
 	/* Send the connection initiation message: */
 	{
 	Threads::Mutex::Lock pipeLock(pipe->getMutex());
@@ -483,15 +755,25 @@ void CollaborationClient::connect(void)
 	pipe->write<std::string>(clientName);
 	
 	/* Write names and message payloads of all registered protocols: */
+	#ifdef VERBOSE
+	std::cout<<"Requesting protocols";
+	#endif
 	pipe->write<unsigned int>(protocols.size());
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
 		{
 		/* Write the protocol name: */
 		pipe->write<std::string>(std::string((*pIt)->getName()));
 		
+		#ifdef VERBOSE
+		std::cout<<' '<<(*pIt)->getName();
+		#endif
+		
 		/* Write the protocol's message payload (protocol writes length first): */
 		(*pIt)->sendConnectRequest(*pipe);
 		}
+	#ifdef VERBOSE
+	std::cout<<std::endl;
+	#endif
 	
 	/* Process higher-level protocols: */
 	sendConnectRequest();
@@ -501,9 +783,16 @@ void CollaborationClient::connect(void)
 	}
 	
 	/* Wait for the connection reply from the server: */
+	#ifdef VERBOSE
+	std::cout<<"Waiting for connection reply..."<<std::flush;
+	#endif
 	CollaborationPipe::MessageIdType message=pipe->readMessage();
 	if(message==CollaborationPipe::CONNECT_REJECT)
 		{
+		#ifdef VERBOSE
+		std::cout<<" rejected"<<std::endl;
+		#endif
+		
 		/* Read the list of negotiated protocols and their message payloads: */
 		unsigned int numNegotiatedProtocols=pipe->read<unsigned int>();
 		for(unsigned int i=0;i<numNegotiatedProtocols;++i)
@@ -524,10 +813,17 @@ void CollaborationClient::connect(void)
 		}
 	else if(message!=CollaborationPipe::CONNECT_REPLY)
 		{
+		#ifdef VERBOSE
+		std::cout<<" error"<<std::endl;
+		#endif
+		
 		/* Bail out: */
 		delete pipe;
 		Misc::throwStdErr("CollaborationClient::CollaborationClient: Protocol error during connection initialization");
 		}
+	#ifdef VERBOSE
+	std::cout<<" accepted"<<std::endl;
+	#endif
 	
 	/* Read the list of negotiated protocols and their message payloads: */
 	unsigned int numNegotiatedProtocols=pipe->read<unsigned int>();
@@ -553,6 +849,9 @@ void CollaborationClient::connect(void)
 		
 		/* Let the protocol plug-in read its message payload: */
 		protocol->receiveConnectReply(*pipe);
+		#ifdef VERBOSE
+		std::cout<<"Negotiated protocol "<<protocol->getName()<<" with message IDs "<<protocol->messageIdBase<<" to "<<protocol->messageIdBase+numMessages-1<<std::endl;
+		#endif
 		}
 	
 	/* Delete all protocol plug-ins still in the original list: */
@@ -571,6 +870,10 @@ void CollaborationClient::connect(void)
 	
 	/* Start server communication thread: */
 	communicationThread.start(this,&CollaborationClient::communicationThreadMethod);
+	
+	/* Create the client's user interface: */
+	createClientDialog();
+	createSettingsDialog();
 	}
 
 ProtocolClient* CollaborationClient::getProtocol(const char* protocolName)
@@ -593,6 +896,26 @@ void CollaborationClient::setFixGlyphScaling(bool enable)
 void CollaborationClient::setRenderRemoteEnvironments(bool enable)
 	{
 	renderRemoteEnvironments=enable;
+	}
+
+void CollaborationClient::showDialog(void)
+	{
+	/* Pop up the dialog: */
+	Vrui::popupPrimaryWidget(clientDialogPopup);
+	
+	/* Pop up the settings dialog if it is selected: */
+	if(showSettingsToggle->getToggle())
+		showSettingsDialog();
+	}
+
+void CollaborationClient::hideDialog(void)
+	{
+	/* Pop down the settings dialog if it is selected: */
+	if(showSettingsToggle->getToggle())
+		Vrui::popdownPrimaryWidget(settingsDialogPopup);
+	
+	/* Pop down the dialog: */
+	Vrui::popdownPrimaryWidget(clientDialogPopup);
 	}
 
 void CollaborationClient::frame(void)
@@ -620,7 +943,7 @@ void CollaborationClient::frame(void)
 				snprintf(textFieldName,sizeof(textFieldName),"ClientName%u",alIt->clientID);
 				GLMotif::TextField* clientName=new GLMotif::TextField(textFieldName,clientListRowColumn,20);
 				clientName->setHAlignment(GLFont::Left);
-				clientName->setLabel(client->name.c_str());
+				clientName->setString(client->name.c_str());
 				
 				char toggleName[40];
 				snprintf(toggleName,sizeof(toggleName),"FollowClientToggle%u",alIt->clientID);
@@ -632,10 +955,6 @@ void CollaborationClient::frame(void)
 				GLMotif::ToggleButton* faceClientToggle=new GLMotif::ToggleButton(toggleName,clientListRowColumn,"Face");
 				faceClientToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
 				faceClientToggle->getValueChangedCallbacks().add(this,&CollaborationClient::faceClientToggleValueChangedCallback);
-				
-				/* Pop up the dialog if this is the first remote client: */
-				if(clientList.size()==1)
-					Vrui::popupPrimaryWidget(remoteClientDialogPopup,Vrui::getNavigationTransformation().transform(Vrui::getDisplayCenter()));
 				
 				/* Process protocol plug-ins: */
 				for(Client::RemoteClientProtocolList::iterator pIt=client->protocols.begin();pIt!=client->protocols.end();++pIt)
@@ -679,16 +998,15 @@ void CollaborationClient::frame(void)
 					for(Client::RemoteClientProtocolList::iterator pIt=(*clIt)->protocols.begin();pIt!=(*clIt)->protocols.end();++pIt)
 						pIt->protocol->disconnectClient(pIt->protocolClientState);
 					
+					/* Process higher-level protocols: */
+					disconnectClient((*clIt)->clientID);
+					
 					/* Remove the client state structure from the client list: */
 					delete *clIt;
 					clientList.erase(clIt);
 					
 					/* Remove the client from the client list dialog: */
 					clientListRowColumn->removeWidgets(clientIndex);
-					
-					/* Pop down the dialog if this was the last remote client: */
-					if(clientList.empty())
-						Vrui::popdownPrimaryWidget(remoteClientDialogPopup);
 					}
 				break;
 				}
@@ -801,6 +1119,7 @@ void CollaborationClient::display(GLContextData& contextData) const
 			else
 				Vrui::renderGlyph(viewerGlyph,cs.viewerStates[i],contextData);
 		
+		#ifdef COLLABORATION_SHARE_DEVICES
 		/* Render all input devices of this client: */
 		for(unsigned int i=0;i<cs.numInputDevices;++i)
 			if(fixGlyphScaling)
@@ -811,116 +1130,34 @@ void CollaborationClient::display(GLContextData& contextData) const
 				}
 			else
 				Vrui::renderGlyph(inputDeviceGlyph,cs.inputDeviceStates[i],contextData);
+		#endif
 		}
 	
-	/* Call all protocol plug-ins' display methods: */
+	/* Call all protocol plug-ins' GL render actions: */
 	for(ProtocolList::const_iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
-		(*pIt)->display(contextData);
+		(*pIt)->glRenderAction(contextData);
 	
-	/* Call the client-specific protocol plug-in display method for each remote client: */
+	/* Call the client-specific protocol plug-in GL render actions for each remote client: */
 	for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
 		{
 		/* Process all protocols shared with the remote client: */
 		for(Client::RemoteClientProtocolList::const_iterator cpIt=(*clIt)->protocols.begin();cpIt!=(*clIt)->protocols.end();++cpIt)
-			cpIt->protocol->display(cpIt->protocolClientState,contextData);
+			cpIt->protocol->glRenderAction(cpIt->protocolClientState,contextData);
 		}
 	}
 
-void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+void CollaborationClient::sound(ALContextData& contextData) const
 	{
-	if(cbData->set)
+	/* Call all protocol plug-ins' AL render actions: */
+	for(ProtocolList::const_iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
+		(*pIt)->alRenderAction(contextData);
+	
+	/* Call the client-specific protocol plug-in AL render actions for each remote client: */
+	for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
 		{
-		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
-		
-		if(followClientIndex>=0)
-			{
-			if(newClientIndex!=followClientIndex)
-				{
-				/* Unset the previously set toggle: */
-				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
-				if(oldToggle!=0)
-					oldToggle->setToggle(false);
-				
-				/* Follow the new client: */
-				followClientIndex=newClientIndex;
-				}
-			}
-		else if(faceClientIndex>=0)
-			{
-			/* Unset the previously set toggle: */
-			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
-			if(oldToggle!=0)
-				oldToggle->setToggle(false);
-			
-			/* Stop facing the old client: */
-			faceClientIndex=-1;
-			
-			/* Follow the new client: */
-			followClientIndex=newClientIndex;
-			}
-		else
-			{
-			/* Try to enable following: */
-			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
-				followClientIndex=newClientIndex;
-			else
-				cbData->toggle->setToggle(false);
-			}
-		}
-	else if(followClientIndex>=0)
-		{
-		/* Disable following: */
-		followClientIndex=-1;
-		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
-		}
-	}
-
-void CollaborationClient::faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
-	{
-	if(cbData->set)
-		{
-		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
-		
-		if(faceClientIndex>=0)
-			{
-			if(newClientIndex!=faceClientIndex)
-				{
-				/* Unset the previously set toggle: */
-				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
-				if(oldToggle!=0)
-					oldToggle->setToggle(false);
-				
-				/* Face the new client: */
-				faceClientIndex=newClientIndex;
-				}
-			}
-		else if(followClientIndex>=0)
-			{
-			/* Unset the previously set toggle: */
-			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
-			if(oldToggle!=0)
-				oldToggle->setToggle(false);
-			
-			/* Stop following the old client: */
-			followClientIndex=-1;
-			
-			/* Face the new client: */
-			faceClientIndex=newClientIndex;
-			}
-		else
-			{
-			/* Try to enable facing: */
-			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
-				faceClientIndex=newClientIndex;
-			else
-				cbData->toggle->setToggle(false);
-			}
-		}
-	else if(faceClientIndex>=0)
-		{
-		/* Disable facing: */
-		faceClientIndex=-1;
-		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+		/* Process all protocols shared with the remote client: */
+		for(Client::RemoteClientProtocolList::const_iterator cpIt=(*clIt)->protocols.begin();cpIt!=(*clIt)->protocols.end();++cpIt)
+			cpIt->protocol->alRenderAction(cpIt->protocolClientState,contextData);
 		}
 	}
 
@@ -952,10 +1189,6 @@ void CollaborationClient::receiveClientConnect(unsigned int clientID)
 	{
 	}
 
-void CollaborationClient::receiveClientDisconnect(unsigned int clientID)
-	{
-	}
-
 void CollaborationClient::receiveServerUpdate(void)
 	{
 	}
@@ -970,6 +1203,10 @@ bool CollaborationClient::handleMessage(CollaborationPipe::MessageIdType message
 	}
 
 void CollaborationClient::beforeClientUpdate(void)
+	{
+	}
+
+void CollaborationClient::disconnectClient(unsigned int clientID)
 	{
 	}
 

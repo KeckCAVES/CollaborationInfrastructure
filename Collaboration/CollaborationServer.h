@@ -185,7 +185,6 @@ class CollaborationServer
 	virtual void sendDisconnectReply(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server sends a disconnect reply to a client
 	virtual void receiveClientUpdate(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server receives a client's state update packet
 	virtual void sendClientConnect(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a connection message for client sourceClient to client destClient
-	virtual void sendClientDisconnect(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a disconnection message for client sourceClient to client destClient
 	virtual void sendServerUpdate(unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a state update to a client
 	virtual void sendServerUpdate(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a state update for client sourceClient to client destClient
 	

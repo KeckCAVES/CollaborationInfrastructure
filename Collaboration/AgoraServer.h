@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraServer - Server object to implement the Agora group audio protocol.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -27,7 +27,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Threads/DropoutBuffer.h>
 
 #include <Collaboration/ProtocolServer.h>
-#include <Collaboration/TheoraWrappers.h>
 
 #include <Collaboration/AgoraPipe.h>
 
@@ -46,10 +45,12 @@ class AgoraServer:public ProtocolServer,public AgoraPipe
 		size_t speexFrameSize; // Client's SPEEX frame size
 		size_t speexPacketSize; // Client's SPEEX packet size
 		Threads::DropoutBuffer<char> speexPacketBuffer; // Buffer holding encoded SPEEX audio packets sent by the client
+		Point headPosition; // Client's current head position in navigational space
 		
 		bool hasTheora; // Flag whether the client is streaming video data
-		OggPacket theoraStreamHeaders[3]; // Ogg packets containing the client's Theora stream headers (header, comment, tables)
-		Threads::TripleBuffer<OggPacket> theoraPacketBuffer; // Triple buffer containing encoded video frames from the client
+		unsigned int theoraHeadersSize; // Size of the client's Theora stream header packets
+		unsigned char* theoraHeaders; // A little-endian buffer containing the clients Theora stream header packets
+		Threads::TripleBuffer<VideoPacket> theoraPacketBuffer; // Triple buffer containing encoded video frames from the client
 		OGTransform videoTransform; // Client's current transformation from local video space to shared navigational space
 		Scalar videoSize[2]; // Client's virtual video size in client's video space
 		

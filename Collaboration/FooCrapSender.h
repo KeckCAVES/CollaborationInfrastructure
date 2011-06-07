@@ -47,6 +47,9 @@ void sendRandomCrap(CollaborationPipe& pipe)
 		sumTotal+=value;
 		}
 	pipe.write<unsigned int>(sumTotal);
+	#if DUMP_PROTOCOL
+	std::cout<<"Sent "<<messageSize<<" bytes with checksum "<<sumTotal<<std::endl;
+	#endif
 	}
 
 void receiveRandomCrap(CollaborationPipe& pipe)
@@ -61,6 +64,9 @@ void receiveRandomCrap(CollaborationPipe& pipe)
 	unsigned int check=pipe.read<unsigned int>();
 	if(check!=sumTotal)
 		Misc::throwStdErr("FooClient::Fatal frotocol failure");
+	#if DUMP_PROTOCOL
+	std::cout<<"Received "<<messageSize<<" bytes with checksum "<<sumTotal<<std::endl;
+	#endif
 	}
 
 }

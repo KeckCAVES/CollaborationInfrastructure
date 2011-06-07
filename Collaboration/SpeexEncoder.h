@@ -1,7 +1,7 @@
 /***********************************************************************
 SpeexEncoder - Class encapsulating an audio encoder using the SPEEX
 speech codec.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -26,7 +26,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Threads/Thread.h>
 #include <Threads/DropoutBuffer.h>
-#include <Sound/ALSAPCMDevice.h>
+#include <Sound/Linux/ALSAPCMDevice.h>
 #include <speex/speex.h>
 
 namespace Collaboration {

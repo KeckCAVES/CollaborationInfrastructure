@@ -28,9 +28,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/CollaborationPipe.h>
 
-#include <Collaboration/FooCrapSender.h>
+#define DUMP_PROTOCOL 1
 
-#define DUMP_PROTOCOL 0
+#include <Collaboration/FooCrapSender.h>
 
 namespace Collaboration {
 
@@ -113,6 +113,9 @@ void FooClient::sendConnectRequest(CollaborationPipe& pipe)
 		sumTotal+=value;
 		}
 	pipe.write<unsigned int>(sumTotal);
+	#if DUMP_PROTOCOL
+	std::cout<<"Sent "<<messageSize<<" bytes with checksum "<<sumTotal<<std::endl;
+	#endif
 	}
 
 void FooClient::receiveConnectReply(CollaborationPipe& pipe)
@@ -271,22 +274,40 @@ void FooClient::frame(ProtocolClient::RemoteClientState* rcs)
 		Misc::throwStdErr("FooClient::frame: Mismatching remote client state object type");
 	}
 
-void FooClient::display(GLContextData& contextData) const
+void FooClient::glRenderAction(GLContextData& contextData) const
 	{
 	#if DUMP_PROTOCOL
-	std::cout<<"FooClient::display"<<std::endl;
+	std::cout<<"FooClient::glRenderAction"<<std::endl;
 	#endif
 	}
 
-void FooClient::display(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
+void FooClient::glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const
 	{
 	#if DUMP_PROTOCOL
-	std::cout<<"FooClient::display"<<std::endl;
+	std::cout<<"FooClient::glRenderAction"<<std::endl;
 	#endif
 	
 	const RemoteClientState* myRcs=dynamic_cast<const RemoteClientState*>(rcs);
 	if(myRcs==0)
-		Misc::throwStdErr("FooClient::display: Mismatching remote client state object type");
+		Misc::throwStdErr("FooClient::glRenderAction: Mismatching remote client state object type");
+	}
+
+void FooClient::alRenderAction(ALContextData& contextData) const
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooClient::alRenderAction"<<std::endl;
+	#endif
+	}
+
+void FooClient::alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALContextData& contextData) const
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooClient::alRenderAction"<<std::endl;
+	#endif
+	
+	const RemoteClientState* myRcs=dynamic_cast<const RemoteClientState*>(rcs);
+	if(myRcs==0)
+		Misc::throwStdErr("FooClient::alRenderAction: Mismatching remote client state object type");
 	}
 
 }

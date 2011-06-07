@@ -1,7 +1,7 @@
 /***********************************************************************
 AgoraPipe - Common interface between an Agora server and an Agora
 client.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 

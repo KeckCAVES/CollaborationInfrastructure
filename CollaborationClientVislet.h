@@ -1,7 +1,7 @@
 /***********************************************************************
 CollaborationClientVislet - Vislet class to embed a collaboration client
 into an otherwise unaware Vrui application.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -60,6 +60,7 @@ class CollaborationClient:public Vislet
 	static CollaborationClientFactory* factory; // Pointer to the factory object for this class
 	
 	Collaboration::CollaborationClient* collaborationClient; // Pointer to the collaboration client object
+	bool firstFrame; // Flag to indicate the first frame in the vislet's lifetime
 	
 	/* Constructors and destructors: */
 	public:
@@ -68,8 +69,11 @@ class CollaborationClient:public Vislet
 	
 	/* Methods: */
 	virtual Vrui::VisletFactory* getFactory(void) const;
+	virtual void disable(void);
+	virtual void enable(void);
 	virtual void frame(void);
 	virtual void display(GLContextData& contextData) const;
+	virtual void sound(ALContextData& contextData) const;
 	};
 
 }

@@ -81,6 +81,7 @@ int main(int argc,char* argv[])
 	
 	/* Reroute SIG_INT signals to cleanly shut down multiplexer: */
 	struct sigaction sigIntAction;
+	memset(&sigIntAction,0,sizeof(struct sigaction));
 	sigIntAction.sa_handler=termSignalHandler;
 	if(sigaction(SIGINT,&sigIntAction,0)!=0)
 		std::cerr<<"CollaborationServerMain: Cannot intercept SIG_INT signals. Server won't shut down cleanly."<<std::endl;

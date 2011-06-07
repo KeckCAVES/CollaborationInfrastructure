@@ -66,8 +66,10 @@ class FooClient:public ProtocolClient
 	virtual void disconnectClient(ProtocolClient::RemoteClientState* rcs);
 	virtual void frame(void);
 	virtual void frame(ProtocolClient::RemoteClientState* rcs);
-	virtual void display(GLContextData& contextData) const;
-	virtual void display(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;
+	virtual void glRenderAction(GLContextData& contextData) const;
+	virtual void glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;
+	virtual void alRenderAction(ALContextData& contextData) const;
+	virtual void alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALContextData& contextData) const;
 	};
 
 }

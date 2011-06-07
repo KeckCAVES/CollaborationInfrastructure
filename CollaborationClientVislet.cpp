@@ -1,7 +1,7 @@
 /***********************************************************************
 CollaborationClientVislet - Vislet class to embed a collaboration client
 into an otherwise unaware Vrui application.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -29,6 +29,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #include <GL/gl.h>
 #include <GL/GLTransformationWrappers.h>
+#include <GLMotif/WidgetManager.h>
+#include <GLMotif/PopupWindow.h>
+#include <AL/ALContextData.h>
 #include <Vrui/Vrui.h>
 #include <Vrui/DisplayState.h>
 #include <Vrui/VisletManager.h>
@@ -109,7 +112,7 @@ Methods of class CollaborationClient:
 ************************************/
 
 CollaborationClient::CollaborationClient(int numArguments,const char* const arguments[])
-	:collaborationClient(0)
+	:collaborationClient(0),firstFrame(true)
 	{
 	/* Create a configuration object: */
 	Collaboration::CollaborationClient::Configuration* cfg=new Collaboration::CollaborationClient::Configuration;
@@ -178,29 +181,78 @@ Vrui::VisletFactory* CollaborationClient::getFactory(void) const
 	return factory;
 	}
 
+void CollaborationClient::disable(void)
+	{
+	Vislet::disable();
+	
+	if(!isActive()&&collaborationClient!=0)
+		{
+		/* Hide the collaboration client's dialog: */
+		collaborationClient->hideDialog();
+		}
+	}
+
+void CollaborationClient::enable(void)
+	{
+	Vislet::enable();
+	
+	if(isActive()&&collaborationClient!=0)
+		{
+		/* Show the collaboration client's dialog: */
+		collaborationClient->showDialog();
+		}
+	}
+
 void CollaborationClient::frame(void)
 	{
-	/* Call the collaboration client's frame method: */
-	if(collaborationClient!=0)
+	if(isActive()&&collaborationClient!=0)
+		{
+		if(firstFrame)
+			{
+			/* Show and minimize the collaboration client dialog: */
+			collaborationClient->showDialog();
+			Vrui::getWidgetManager()->hide(collaborationClient->getDialog());
+			
+			firstFrame=false;
+			}
+		
+		/* Call the collaboration client's frame method: */
 		collaborationClient->frame();
+		}
 	}
 
 void CollaborationClient::display(GLContextData& contextData) const
 	{
-	if(collaborationClient!=0)
+	if(isActive()&&collaborationClient!=0)
 		{
 		/* Go to navigational coordinates: */
 		glMatrixMode(GL_MODELVIEW);
 		glPushMatrix();
 		glLoadIdentity();
 		glMultMatrix(getDisplayState(contextData).modelviewNavigational);
-
+		
 		/* Call the collaboration client's display method: */
 		collaborationClient->display(contextData);
 		
 		/* Return to physical coordinates: */
 		glMatrixMode(GL_MODELVIEW);
 		glPopMatrix();
+		}
+	}
+
+void CollaborationClient::sound(ALContextData& contextData) const
+	{
+	if(isActive()&&collaborationClient!=0)
+		{
+		/* Go to navigational coordinates: */
+		contextData.pushMatrix();
+		contextData.multMatrix(Vrui::getNavigationTransformation());
+		
+		/* Call the collaboration client's sound method: */
+		collaborationClient->sound(contextData);
+		
+		/* Return to physical coordinates: */
+		contextData.popMatrix();
 		}
 	}
 

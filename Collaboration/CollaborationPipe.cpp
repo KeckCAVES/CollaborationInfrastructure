@@ -1,7 +1,7 @@
 /***********************************************************************
 CollaborationPipe - Class defining the communication protocol between a
 collaboration client and a collaboration server.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2010 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -34,13 +34,27 @@ namespace Collaboration {
 Methods of class CollaborationPipe::ClientState:
 ***********************************************/
 
+CollaborationPipe::ClientState::ClientState(void)
+	:numViewers(0),viewerStates(0)
+	 #ifdef COLLABORATION_SHARE_DEVICES
+	 ,numInputDevices(0),inputDeviceStates(0)
+	 #endif
+	{
+	}
+
 CollaborationPipe::ClientState::~ClientState(void)
 	{
 	delete[] viewerStates;
+	#ifdef COLLABORATION_SHARE_DEVICES
 	delete[] inputDeviceStates;
+	#endif
 	}
 
+#ifdef COLLABORATION_SHARE_DEVICES
 CollaborationPipe::ClientState& CollaborationPipe::ClientState::resize(unsigned int newNumViewers,unsigned int newNumInputDevices)
+#else
+CollaborationPipe::ClientState& CollaborationPipe::ClientState::resize(unsigned int newNumViewers)
+#endif
 	{
 	if(newNumViewers!=numViewers)
 		{
@@ -49,6 +63,7 @@ CollaborationPipe::ClientState& CollaborationPipe::ClientState::resize(unsigned 
 		numViewers=newNumViewers;
 		viewerStates=numViewers>0?new OGTransform[numViewers]:0;
 		}
+	#ifdef COLLABORATION_SHARE_DEVICES
 	if(newNumInputDevices!=numInputDevices)
 		{
 		/* Re-allocate the input device states array: */
@@ -56,6 +71,7 @@ CollaborationPipe::ClientState& CollaborationPipe::ClientState::resize(unsigned 
 		numInputDevices=newNumInputDevices;
 		inputDeviceStates=numInputDevices>0?new OGTransform[numInputDevices]:0;
 		}
+	#endif
 	
 	return *this;
 	}
@@ -72,12 +88,19 @@ CollaborationPipe::ClientState& CollaborationPipe::ClientState::updateFromVrui(v
 	size=Scalar(invNav.getScaling()*Vrui::getDisplaySize());
 	inchScale=Scalar(invNav.getScaling()*Vrui::getInchFactor());
 	
+	#ifdef COLLABORATION_SHARE_DEVICES
 	/* Get the positions/orientations of all viewers and input devices: */
 	resize(Vrui::getNumViewers(),Vrui::getNumInputDevices());
 	for(unsigned int i=0;i<numViewers;++i)
 		viewerStates[i]=OGTransform(invNav*Vrui::NavTrackerState(Vrui::getViewer(i)->getHeadTransformation()));
 	for(unsigned int i=0;i<numInputDevices;++i)
 		inputDeviceStates[i]=OGTransform(invNav*Vrui::NavTrackerState(Vrui::getInputDevice(i)->getTransformation()));
+	#else
+	/* Get the positions/orientations of all viewers: */
+	resize(Vrui::getNumViewers());
+	for(unsigned int i=0;i<numViewers;++i)
+		viewerStates[i]=OGTransform(invNav*Vrui::NavTrackerState(Vrui::getViewer(i)->getHeadTransformation()));
+	#endif
 	
 	return *this;
 	}
@@ -124,11 +147,15 @@ void CollaborationPipe::writeClientState(const CollaborationPipe::ClientState& c
 	
 	/* Write the client's viewer and input device states: */
 	write<unsigned int>(clientState.numViewers);
+	#ifdef COLLABORATION_SHARE_DEVICES
 	write<unsigned int>(clientState.numInputDevices);
+	#endif
 	for(unsigned int i=0;i<clientState.numViewers;++i)
 		writeTrackerState(clientState.viewerStates[i]);
+	#ifdef COLLABORATION_SHARE_DEVICES
 	for(unsigned int i=0;i<clientState.numInputDevices;++i)
 		writeTrackerState(clientState.inputDeviceStates[i]);
+	#endif
 	}
 
 CollaborationPipe::ClientState& CollaborationPipe::readClientState(CollaborationPipe::ClientState& clientState)
@@ -142,12 +169,18 @@ CollaborationPipe::ClientState& CollaborationPipe::readClientState(Collaboration
 	
 	/* Read the client's viewer and input device states: */
 	unsigned int newNumViewers=read<unsigned int>();
+	#ifdef COLLABORATION_SHARE_DEVICES
 	unsigned int newNumInputDevices=read<unsigned int>();
 	clientState.resize(newNumViewers,newNumInputDevices);
+	#else
+	clientState.resize(newNumViewers);
+	#endif
 	for(unsigned int i=0;i<clientState.numViewers;++i)
 		clientState.viewerStates[i]=readTrackerState();
+	#ifdef COLLABORATION_SHARE_DEVICES
 	for(unsigned int i=0;i<clientState.numInputDevices;++i)
 		clientState.inputDeviceStates[i]=readTrackerState();
+	#endif
 	
 	return clientState;
 	}
