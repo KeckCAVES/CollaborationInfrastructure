@@ -3,7 +3,7 @@ ProtocolServer - Abstract base class for the server-side components of
 collaboration protocols that can be added to the base protocol
 implemented by CollaborationClient and CollaborationServer, to simplify
 creating complex higher-level protocols.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -44,7 +44,7 @@ Methods of class ProtocolServer:
 *******************************/
 
 ProtocolServer::ProtocolServer(void)
-	:messageIdBase(0)
+	:server(0),messageIdBase(0)
 	{
 	}
 
@@ -58,45 +58,51 @@ unsigned int ProtocolServer::getNumMessages(void) const
 	return 0;
 	}
 
-ProtocolServer::ClientState* ProtocolServer::receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe)
+void ProtocolServer::initialize(CollaborationServer* sServer,Misc::ConfigurationFileSection& configFileSection)
 	{
-	/* Return a dummy object: */
-	return new ClientState;
+	/* Remember the server object: */
+	server=sServer;
 	}
 
-void ProtocolServer::sendConnectReply(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+ProtocolServer::ClientState* ProtocolServer::receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe)
 	{
+	/* Reject the connection: */
+	return 0;
 	}
 
-void ProtocolServer::sendConnectReject(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
-	{
-	}
-
-void ProtocolServer::receiveDisconnectRequest(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void ProtocolServer::sendConnectReply(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolServer::sendDisconnectReply(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void ProtocolServer::sendConnectReject(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolServer::receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void ProtocolServer::receiveDisconnectRequest(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void ProtocolServer::sendDisconnectReply(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolServer::sendServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void ProtocolServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void ProtocolServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	}
 
-bool ProtocolServer::handleMessage(ProtocolServer::ClientState* cs,unsigned int messageId,CollaborationPipe& pipe)
+void ProtocolServer::sendServerUpdate(ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
+	{
+	}
+
+void ProtocolServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
+	{
+	}
+
+bool ProtocolServer::handleMessage(ProtocolServer::ClientState* cs,unsigned int messageId,Comm::NetPipe& pipe)
 	{
 	/* Default is to reject all messages: */
 	return false;
@@ -118,7 +124,7 @@ void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
 	{
 	}
 
-void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void ProtocolServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	}
 

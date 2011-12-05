@@ -1,7 +1,7 @@
 /***********************************************************************
 GrapheinClient - Client object to implement the Graphein shared
 annotation protocol.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -25,7 +25,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
-#include <Geometry/OrthogonalTransformation.h>
+#include <IO/FixedMemoryFile.h>
+#include <Comm/NetPipe.h>
 #include <GL/gl.h>
 #include <GL/GLColorTemplates.h>
 #include <GL/GLGeometryWrappers.h>
@@ -47,15 +48,118 @@ Methods of class GrapheinClient::RemoteClientState:
 **************************************************/
 
 GrapheinClient::RemoteClientState::RemoteClientState(void)
-	:curves(101)
+	:curves(17)
 	{
 	}
 
 GrapheinClient::RemoteClientState::~RemoteClientState(void)
 	{
 	/* Delete all curves in the hash table: */
-	for(CurveHasher::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
+	for(CurveMap::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
 		delete cIt->getDest();
+	
+	/* Delete any leftover message buffers: */
+	{
+	Threads::Mutex::Lock messageBufferLock(messageBufferMutex);
+	for(std::vector<IncomingMessage*>::iterator mIt=messages.begin();mIt!=messages.end();++mIt)
+		delete *mIt;
+	}
+	}
+
+void GrapheinClient::RemoteClientState::processMessages(void)
+	{
+	Threads::Mutex::Lock messageBufferLock(messageBufferMutex);
+	
+	/* Handle all state tracking messages: */
+	for(std::vector<IncomingMessage*>::iterator mIt=messages.begin();mIt!=messages.end();++mIt)
+		{
+		/* Process all messages in this buffer: */
+		IO::File& msg=**mIt;
+		while(!msg.eof())
+			{
+			/* Read the next message: */
+			MessageIdType message=GrapheinProtocol::readMessage(msg);
+			switch(message)
+				{
+				case ADD_CURVE:
+					{
+					unsigned int newCurveId=msg.read<Card>();
+					
+					/* Check if a curve of the given ID already exists: */
+					if(curves.isEntry(newCurveId))
+						{
+						/* Skip the curve definition: */
+						Curve dummy;
+						dummy.read(msg);
+						}
+					else
+						{
+						/* Create a new curve and add it to the curve map: */
+						Curve* newCurve=new Curve;
+						curves.setEntry(CurveMap::Entry(newCurveId,newCurve));
+						newCurve->read(msg);
+						}
+					
+					break;
+					}
+				
+				case APPEND_POINT:
+					{
+					/* Read the curve ID and index of the new vertex: */
+					unsigned int curveId=msg.read<Card>();
+					unsigned int vertexIndex=msg.read<Card>();
+					
+					/* Read the vertex: */
+					Point newVertex=GrapheinProtocol::read<Point>(msg);
+					
+					/* Get a handle on the curve: */
+					CurveMap::Iterator cIt=curves.findEntry(curveId);
+					if(!cIt.isFinished())
+						{
+						/* Check that the curve doesn't already contains the vertex: */
+						if(vertexIndex>=cIt->getDest()->vertices.size())
+							{
+							/* Append the vertex: */
+							cIt->getDest()->vertices.push_back(newVertex);
+							}
+						}
+					break;
+					}
+				
+				case DELETE_CURVE:
+					{
+					/* Read the curve ID: */
+					unsigned int curveId=msg.read<Card>();
+					
+					/* Get a handle on the curve: */
+					CurveMap::Iterator cIt=curves.findEntry(curveId);
+					if(!cIt.isFinished())
+						{
+						/* Delete the curve: */
+						delete cIt->getDest();
+						curves.removeEntry(cIt);
+						}
+					
+					break;
+					}
+				
+				case DELETE_ALL_CURVES:
+					{
+					/* Delete all curves: */
+					for(CurveMap::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
+						delete cIt->getDest();
+					curves.clear();
+					break;
+					}
+				}
+			}
+		
+		/* Destroy the just-read message buffer: */
+		delete *mIt;
+		}
+	
+	/* Clear the message buffer list: */
+	messages.clear();
 	}
 
 void GrapheinClient::RemoteClientState::glRenderAction(GLContextData& contextData) const
@@ -64,10 +168,7 @@ void GrapheinClient::RemoteClientState::glRenderAction(GLContextData& contextDat
 	glDisable(GL_LIGHTING);
 	
 	/* Render all curves: */
-	{
-	Threads::Mutex::Lock curveLock(curveMutex);
-	
-	for(CurveHasher::ConstIterator cIt=curves.begin();!cIt.isFinished();++cIt)
+	for(CurveMap::ConstIterator cIt=curves.begin();!cIt.isFinished();++cIt)
 		{
 		glLineWidth(cIt->getDest()->lineWidth);
 		glColor(cIt->getDest()->color);
@@ -76,7 +177,6 @@ void GrapheinClient::RemoteClientState::glRenderAction(GLContextData& contextDat
 			glVertex(*vIt);
 		glEnd();
 		}
-	}
 	
 	glPopAttrib();
 	}
@@ -182,30 +282,42 @@ void GrapheinClient::GrapheinTool::buttonCallback(int,Vrui::InputDevice::ButtonC
 		active=true;
 		
 		/* Start a new curve: */
-		currentCurveId=client->nextCurveId;
-		++client->nextCurveId;
+		currentCurveId=client->nextLocalCurveId;
+		++client->nextLocalCurveId;
 		Curve* newCurve=new Curve;
 		newCurve->lineWidth=newLineWidth;
 		newCurve->color=newColor;
 		const Vrui::NavTransform& invNav=Vrui::getInverseNavigationTransformation();
 		lastPoint=invNav.transform(getButtonDevicePosition(0));
 		newCurve->vertices.push_back(lastPoint);
-		client->curves.setEntry(CurveHasher::Entry(currentCurveId,newCurve));
+		client->localCurves.setEntry(CurveMap::Entry(currentCurveId,newCurve));
 		
-		/* Enqueue a curve action: */
-		client->actions.push_back(CurveAction(ADD_CURVE,client->curves.findEntry(currentCurveId)));
+		/* Send a curve creation message: */
+		{
+		Threads::Mutex::Lock messageLock(client->messageMutex);
+		writeMessage(ADD_CURVE,client->message);
+		client->message.write<Card>(currentCurveId);
+		newCurve->write(client->message);
+		}
 		}
 	else
 		{
 		/* Retrieve the current curve: */
-		CurveHasher::Iterator curveIt=client->curves.findEntry(currentCurveId);
-		if(!curveIt.isFinished())
+		CurveMap::Iterator cIt=client->localCurves.findEntry(currentCurveId);
+		if(!cIt.isFinished())
 			{
-			/* Add the final dragging point to the curve: */
 			if(currentPoint!=lastPoint)
 				{
-				/* Enqueue a curve action: */
-				client->actions.push_back(CurveAction(APPEND_POINT,client->curves.findEntry(currentCurveId),currentPoint));
+				/* Add the final dragging point to the curve: */
+				cIt->getDest()->vertices.push_back(currentPoint);
+				
+				/* Send a vertex appending message: */
+				{
+				Threads::Mutex::Lock messageLock(client->messageMutex);
+				writeMessage(APPEND_POINT,client->message);
+				client->message.write<Card>(currentCurveId);
+				write(currentPoint,client->message);
+				}
 				}
 			}
 		
@@ -228,8 +340,20 @@ void GrapheinClient::GrapheinTool::frame(void)
 		/* Check if the dragging point is far enough away from the most recent curve vertex: */
 		if(Geometry::sqrDist(currentPoint,lastPoint)>=Math::sqr(Vrui::getUiSize()*invNav.getScaling()))
 			{
-			/* Enqueue a curve action: */
-			client->actions.push_back(CurveAction(APPEND_POINT,client->curves.findEntry(currentCurveId),currentPoint));
+			CurveMap::Iterator cIt=client->localCurves.findEntry(currentCurveId);
+			if(!cIt.isFinished())
+				{
+				/* Add the dragging point to the curve: */
+				cIt->getDest()->vertices.push_back(currentPoint);
+				
+				/* Send a vertex appending message: */
+				{
+				Threads::Mutex::Lock messageLock(client->messageMutex);
+				writeMessage(APPEND_POINT,client->message);
+				client->message.write<Card>(currentCurveId);
+				write(currentPoint,client->message);
+				}
+				}
 			
 			/* Remember the last added point: */
 			lastPoint=currentPoint;
@@ -245,18 +369,18 @@ void GrapheinClient::GrapheinTool::display(GLContextData& contextData) const
 	if(active)
 		{
 		/* Retrieve the current curve: */
-		CurveHasher::Iterator curveIt=client->curves.findEntry(currentCurveId);
-		if(!curveIt.isFinished())
+		CurveMap::Iterator cIt=client->localCurves.findEntry(currentCurveId);
+		if(!cIt.isFinished())
 			{
 			/* Render the last segment of the current curve: */
 			glPushAttrib(GL_ENABLE_BIT|GL_LINE_BIT);
 			glDisable(GL_LIGHTING);
-			glLineWidth(curveIt->getDest()->lineWidth);
+			glLineWidth(cIt->getDest()->lineWidth);
 			
 			glPushMatrix();
 			glMultMatrix(Vrui::getNavigationTransformation());
 			
-			glColor(curveIt->getDest()->color);
+			glColor(cIt->getDest()->color);
 			glBegin(GL_LINES);
 			glVertex(lastPoint);
 			glVertex(currentPoint);
@@ -286,8 +410,19 @@ void GrapheinClient::GrapheinTool::colorButtonSelectCallback(GLMotif::NewButton:
 
 void GrapheinClient::GrapheinTool::deleteCurvesCallback(Misc::CallbackData* cbData)
 	{
-	/* Enqueue a curve action: */
-	client->actions.push_back(CurveAction(DELETE_ALL_CURVES));
+	if(client==0)
+		return;
+	
+	/* Delete all local curves: */
+	for(CurveMap::Iterator cIt=client->localCurves.begin();!cIt.isFinished();++cIt)
+		delete cIt->getDest();
+	client->localCurves.clear();
+	
+	/* Send a curve deletion message: */
+	{
+	Threads::Mutex::Lock messageLock(client->messageMutex);
+	writeMessage(DELETE_ALL_CURVES,client->message);
+	}
 	
 	/* Deactivate the tool just in case: */
 	active=false;
@@ -298,18 +433,26 @@ Methods of class GrapheinClient:
 *******************************/
 
 GrapheinClient::GrapheinClient(void)
-	:nextCurveId(0),curves(101)
+	:nextLocalCurveId(0),localCurves(17)
 	{
+	/* Register the Graphein tool class: */
+	GrapheinToolFactory* grapheinToolFactory=new GrapheinToolFactory("GrapheinTool","Shared Curve Editor",Vrui::getToolManager()->loadClass("UtilityTool"),*Vrui::getToolManager());
+	grapheinToolFactory->setNumButtons(1);
+	grapheinToolFactory->setButtonFunction(0,"Draw Curves");
+	Vrui::getToolManager()->addClass(grapheinToolFactory,Vrui::ToolManager::defaultToolFactoryDestructor);
 	}
 
 GrapheinClient::~GrapheinClient(void)
 	{
-	/* Delete all curves in the hash table: */
-	for(CurveHasher::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
+	/* Delete all local curves: */
+	for(CurveMap::Iterator cIt=localCurves.begin();!cIt.isFinished();++cIt)
 		delete cIt->getDest();
 	
 	/* Uninstall tool manager callbacks: */
 	Vrui::getToolManager()->getToolCreationCallbacks().remove(this,&GrapheinClient::toolCreationCallback);
+	
+	/* Unregister the Graphein tool class before the client is unloaded: */
+	Vrui::getToolManager()->releaseClass("GrapheinTool");
 	}
 
 const char* GrapheinClient::getName(void) const
@@ -322,227 +465,107 @@ unsigned int GrapheinClient::getNumMessages(void) const
 	return MESSAGES_END;
 	}
 
-void GrapheinClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+void GrapheinClient::initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection)
 	{
+	/* Call the base class method: */
+	ProtocolClient::initialize(sClient,configFileSection);
 	}
 
-void GrapheinClient::sendConnectRequest(CollaborationPipe& pipe)
+void GrapheinClient::sendConnectRequest(Comm::NetPipe& pipe)
 	{
 	/* Send the length of the following message: */
-	pipe.write<unsigned int>(sizeof(unsigned int));
+	pipe.write<Card>(sizeof(Card));
 	
 	/* Send the client's protocol version: */
-	pipe.write<unsigned int>(protocolVersion);
+	pipe.write<Card>(protocolVersion);
 	}
 
-void GrapheinClient::receiveConnectReply(CollaborationPipe& pipe)
+void GrapheinClient::receiveConnectReply(Comm::NetPipe& pipe)
 	{
-	/* Register the Graphein tool class: */
-	GrapheinToolFactory* grapheinToolFactory=new GrapheinToolFactory("GrapheinTool","Shared Curve Editor",Vrui::getToolManager()->loadClass("UtilityTool"),*Vrui::getToolManager());
-	grapheinToolFactory->setNumButtons(1);
-	grapheinToolFactory->setButtonFunction(0,"Draw Curves");
-	Vrui::getToolManager()->addClass(grapheinToolFactory,Vrui::ToolManager::defaultToolFactoryDestructor);
+	/* Set the message buffer's endianness swapping behavior to that of the pipe: */
+	message.setSwapOnWrite(pipe.mustSwapOnWrite());
 	
 	/* Register callbacks with the tool manager: */
 	Vrui::getToolManager()->getToolCreationCallbacks().add(this,&GrapheinClient::toolCreationCallback);
 	}
 
-void GrapheinClient::receiveDisconnectReply(CollaborationPipe& pipe)
+void GrapheinClient::receiveDisconnectReply(Comm::NetPipe& pipe)
 	{
 	/* Uninstall tool manager callbacks: */
 	Vrui::getToolManager()->getToolCreationCallbacks().remove(this,&GrapheinClient::toolCreationCallback);
-	
-	/* Unregister the Graphein tool class before the client is unloaded: */
-	Vrui::getToolManager()->releaseClass("GrapheinTool");
 	}
 
-void GrapheinClient::sendClientUpdate(CollaborationPipe& pipe)
-	{
-	{
-	Threads::Mutex::Lock curveLock(curveMutex);
-	
-	/* Send the curve action list to the server: */
-	for(CurveActionList::const_iterator aIt=actions.begin();aIt!=actions.end();++aIt)
-		{
-		switch(aIt->action)
-			{
-			case ADD_CURVE:
-				/* Send a creation message: */
-				pipe.writeMessage(ADD_CURVE);
-				
-				/* Send the new curve's ID: */
-				pipe.write<unsigned int>(aIt->curveIt->getSource());
-				
-				/* Send the new curve: */
-				writeCurve(pipe,*(aIt->curveIt->getDest()));
-				
-				break;
-			
-			case APPEND_POINT:
-				/* Send an append message: */
-				pipe.writeMessage(APPEND_POINT);
-				
-				/* Send the affected curve's ID: */
-				pipe.write<unsigned int>(aIt->curveIt->getSource());
-				
-				/* Send the new vertex: */
-				pipe.write<Scalar>(aIt->newVertex.getComponents(),3);
-				
-				/* Append the new vertex to the curve: */
-				aIt->curveIt->getDest()->vertices.push_back(aIt->newVertex);
-				
-				break;
-			
-			case DELETE_CURVE:
-				/* Send a delete message: */
-				pipe.writeMessage(DELETE_CURVE);
-				
-				/* Send the affected curve's ID: */
-				pipe.write<unsigned int>(aIt->curveIt->getSource());
-				
-				/* Delete the curve: */
-				delete aIt->curveIt->getDest();
-				curves.removeEntry(aIt->curveIt);
-				
-				break;
-			
-			case DELETE_ALL_CURVES:
-				/* Send a delete message: */
-				pipe.writeMessage(DELETE_ALL_CURVES);
-				
-				/* Delete all curves: */
-				for(CurveHasher::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
-					delete cIt->getDest();
-				
-				curves.clear();
-				
-				break;
-			
-			default:
-				; // Just to make g++ happy
-			}
-		}
-	
-	/* Terminate the action list: */
-	pipe.writeMessage(UPDATE_END);
-	
-	/* Clear the action list: */
-	actions.clear();
-	}
-	}
-
-ProtocolClient::RemoteClientState* GrapheinClient::receiveClientConnect(CollaborationPipe& pipe)
+ProtocolClient::RemoteClientState* GrapheinClient::receiveClientConnect(Comm::NetPipe& pipe)
 	{
 	/* Create a new remote client state object: */
 	RemoteClientState* newClientState=new RemoteClientState;
 	
-	/* Receive the number of existing curves in the remote client: */
-	unsigned int numCurves=pipe.read<unsigned int>();
+	/* Read the number of existing curves in this message: */
+	unsigned int numCurves=pipe.read<Card>();
 	
-	/* Receive all curves: */
+	/* Read all curves: */
 	for(unsigned int i=0;i<numCurves;++i)
 		{
-		/* Receive the curve's ID: */
-		unsigned int curveId=pipe.read<unsigned int>();
+		/* Read the new curve's ID: */
+		unsigned int newCurveId=pipe.read<Card>();
 		
-		/* Create a new curve and add it to the remote client state: */
+		/* Create the new curve and add it to the new client's curve set: */
 		Curve* newCurve=new Curve;
-		newClientState->curves.setEntry(CurveHasher::Entry(curveId,newCurve));
+		newClientState->curves.setEntry(CurveMap::Entry(newCurveId,newCurve));
 		
-		/* Receive the curve: */
-		readCurve(pipe,*newCurve);
+		/* Read the curve's state: */
+		newCurve->read(pipe);
 		}
 	
-	/* Return the new client state object: */
 	return newClientState;
 	}
 
-void GrapheinClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)
+bool GrapheinClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the remote client state object: */
 	RemoteClientState* myRcs=dynamic_cast<RemoteClientState*>(rcs);
 	if(myRcs==0)
 		Misc::throwStdErr("GrapheinClient::receiveServerUpdate: Mismatching remote client state object type");
 	
-	/* Receive a list of curve action messages from the client: */
-	{
-	Threads::Mutex::Lock curveLock(myRcs->curveMutex);
+	/* Read the size of the following message: */
+	unsigned int messageSize=pipe.read<Card>();
 	
-	CollaborationPipe::MessageIdType message;
-	while((message=pipe.readMessage())!=UPDATE_END)
-		switch(message)
-			{
-			case ADD_CURVE:
-				{
-				/* Read the new curve's ID: */
-				unsigned int newCurveId=pipe.read<unsigned int>();
-				
-				/* Create a new curve object and add it to the client state's set: */
-				Curve* newCurve=new Curve;
-				myRcs->curves.setEntry(CurveHasher::Entry(newCurveId,newCurve));
-				
-				/* Receive the new curve from the pipe: */
-				readCurve(pipe,*newCurve);
-				
-				break;
-				}
-			
-			case APPEND_POINT:
-				{
-				/* Read the affected curve's ID: */
-				unsigned int curveId=pipe.read<unsigned int>();
-				
-				/* Read the new vertex position: */
-				Point newVertex;
-				pipe.read<Scalar>(newVertex.getComponents(),3);
-				
-				/* Retrieve the affected curve: */
-				CurveHasher::Iterator curveIt=myRcs->curves.findEntry(curveId);
-				if(!curveIt.isFinished())
-					{
-					/* Append the vertex to the curve: */
-					curveIt->getDest()->vertices.push_back(newVertex);
-					}
-				
-				break;
-				}
-			
-			case DELETE_CURVE:
-				{
-				/* Read the affected curve's ID: */
-				unsigned int curveId=pipe.read<unsigned int>();
-				
-				/* Retrieve the affected curve: */
-				CurveHasher::Iterator curveIt=myRcs->curves.findEntry(curveId);
-				if(!curveIt.isFinished())
-					{
-					/* Delete the curve: */
-					delete curveIt->getDest();
-					myRcs->curves.removeEntry(curveIt);
-					}
-				
-				break;
-				}
-			
-			case DELETE_ALL_CURVES:
-				{
-				/* Delete all curves in the hash table: */
-				for(CurveHasher::Iterator cIt=myRcs->curves.begin();!cIt.isFinished();++cIt)
-					delete cIt->getDest();
-				
-				myRcs->curves.clear();
-				
-				break;
-				}
-			
-			default:
-				Misc::throwStdErr("GrapheinClient::receiveServerUpdate: received unknown curve action message %u",message);
-			}
+	/* Read the entire message into a new read buffer that has the same endianness as the pipe's read end: */
+	IncomingMessage* msg=new IncomingMessage(messageSize);
+	msg->setSwapOnRead(pipe.mustSwapOnRead());
+	pipe.readRaw(msg->getMemory(),messageSize);
+	
+	/* Store the new buffer in the client's message list: */
+	{
+	Threads::Mutex::Lock messageBufferLock(myRcs->messageBufferMutex);
+	myRcs->messages.push_back(msg);
 	}
+	
+	return messageSize!=0;
+	}
+
+void GrapheinClient::sendClientUpdate(Comm::NetPipe& pipe)
+	{
+	/* Send accumulated state tracking messages all at once and then clear the message buffer: */
+	{
+	Threads::Mutex::Lock messageLock(messageMutex);
+	message.writeToSink(pipe);
+	message.clear();
+	}
+	
+	/* Terminate the action list: */
+	writeMessage(UPDATE_END,pipe);
 	}
 
 void GrapheinClient::frame(ProtocolClient::RemoteClientState* rcs)
 	{
+	/* Get a handle on the remote client state object: */
+	RemoteClientState* myRcs=dynamic_cast<RemoteClientState*>(rcs);
+	if(myRcs==0)
+		Misc::throwStdErr("GrapheinClient::frame: Mismatching remote client state object type");
+	
+	/* Process the remote client's queued server update messages: */
+	myRcs->processMessages();
 	}
 
 void GrapheinClient::glRenderAction(GLContextData& contextData) const
@@ -551,7 +574,7 @@ void GrapheinClient::glRenderAction(GLContextData& contextData) const
 	glDisable(GL_LIGHTING);
 	
 	/* Render all curves: */
-	for(CurveHasher::ConstIterator cIt=curves.begin();!cIt.isFinished();++cIt)
+	for(CurveMap::ConstIterator cIt=localCurves.begin();!cIt.isFinished();++cIt)
 		{
 		glLineWidth(cIt->getDest()->lineWidth);
 		glColor(cIt->getDest()->color);

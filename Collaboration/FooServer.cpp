@@ -1,7 +1,7 @@
 /***********************************************************************
 FooServer - Dummy protocol plug-in class to stress-test the plug-in
 mechanism.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -23,14 +23,10 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/FooServer.h>
 
+#if DUMP_PROTOCOL
 #include <iostream>
+#endif
 #include <Misc/ThrowStdErr.h>
-
-#include <Collaboration/CollaborationPipe.h>
-
-#define DUMP_PROTOCOL 1
-
-#include <Collaboration/FooCrapSender.h>
 
 namespace Collaboration {
 
@@ -93,10 +89,10 @@ unsigned int FooServer::getNumMessages(void) const
 	std::cout<<"FooServer::getNumMessages"<<std::endl;
 	#endif
 	
-	return 1; // We have a special CRAP message!
+	return MESSAGES_END; // We have a special CRAP message!
 	}
 
-ProtocolServer::ClientState* FooServer::receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe)
+ProtocolServer::ClientState* FooServer::receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::receiveConnectRequest"<<std::endl;
@@ -107,7 +103,7 @@ ProtocolServer::ClientState* FooServer::receiveConnectRequest(unsigned int proto
 	return new ClientState();
 	}
 
-void FooServer::sendConnectReply(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void FooServer::sendConnectReply(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::sendConnectReply"<<std::endl;
@@ -120,7 +116,7 @@ void FooServer::sendConnectReply(ProtocolServer::ClientState* cs,CollaborationPi
 	sendRandomCrap(pipe);
 	}
 
-void FooServer::sendConnectReject(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void FooServer::sendConnectReject(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::sendConnectReject"<<std::endl;
@@ -133,7 +129,7 @@ void FooServer::sendConnectReject(ProtocolServer::ClientState* cs,CollaborationP
 	sendRandomCrap(pipe);
 	}
 
-void FooServer::receiveDisconnectRequest(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void FooServer::receiveDisconnectRequest(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::receiveDisconnectRequest"<<std::endl;
@@ -146,7 +142,7 @@ void FooServer::receiveDisconnectRequest(ProtocolServer::ClientState* cs,Collabo
 	receiveRandomCrap(pipe);
 	}
 
-void FooServer::sendDisconnectReply(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void FooServer::sendDisconnectReply(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::sendDisconnectReply"<<std::endl;
@@ -159,7 +155,7 @@ void FooServer::sendDisconnectReply(ProtocolServer::ClientState* cs,Collaboratio
 	sendRandomCrap(pipe);
 	}
 
-void FooServer::receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void FooServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::receiveClientUpdate"<<std::endl;
@@ -172,7 +168,7 @@ void FooServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collaboratio
 	receiveRandomCrap(pipe);
 	}
 
-void FooServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void FooServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::sendClientConnect"<<std::endl;
@@ -186,7 +182,7 @@ void FooServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Protocol
 	sendRandomCrap(pipe);
 	}
 
-void FooServer::sendServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void FooServer::sendServerUpdate(ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::sendServerUpdate(destCs)"<<std::endl;
@@ -199,7 +195,7 @@ void FooServer::sendServerUpdate(ProtocolServer::ClientState* destCs,Collaborati
 	sendRandomCrap(pipe);
 	}
 
-void FooServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void FooServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::sendServerUpdate(sourceCs,destCs)"<<std::endl;
@@ -213,7 +209,7 @@ void FooServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolS
 	sendRandomCrap(pipe);
 	}
 
-bool FooServer::handleMessage(ProtocolServer::ClientState* cs,unsigned int messageId,CollaborationPipe& pipe)
+bool FooServer::handleMessage(ProtocolServer::ClientState* cs,unsigned int messageId,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::handleMessage"<<std::endl;
@@ -254,11 +250,11 @@ void FooServer::beforeServerUpdate(void)
 	{
 	#if DUMP_PROTOCOL
 	// std::cout<<"FooServer::beforeServerUpdate()"<<std::endl;
-	#endif
 	
 	if(bracketLevel!=0)
 		std::cerr<<"FooServer::beforeServerUpdate(): Bracket level is "<<bracketLevel<<std::endl;
 	++bracketLevel;
+	#endif
 	}
 
 void FooServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
@@ -276,7 +272,7 @@ void FooServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
 	++myCs->bracketLevel;
 	}
 
-void FooServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void FooServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooServer::beforeServerUpdate(destCs,pipe)"<<std::endl;
@@ -290,7 +286,7 @@ void FooServer::beforeServerUpdate(ProtocolServer::ClientState* destCs,Collabora
 		std::cerr<<"FooServer::beforeServerUpdate(destCs,pipe): Client bracket level is "<<myDestCs->bracketLevel<<std::endl;
 	
 	/* Need to wrap our crap into an actual message packet: */
-	pipe.writeMessage(getMessageIdBase());
+	writeMessage(getMessageIdBase(),pipe);
 	sendRandomCrap(pipe);
 	}
 
@@ -313,11 +309,11 @@ void FooServer::afterServerUpdate(void)
 	{
 	#if DUMP_PROTOCOL
 	// std::cout<<"FooServer::afterServerUpdate()"<<std::endl;
-	#endif
 	
 	--bracketLevel;
 	if(bracketLevel!=0)
 		std::cerr<<"FooServer::afterServerUpdate(): Bracket level is "<<bracketLevel<<std::endl;
+	#endif
 	}
 
 }

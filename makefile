@@ -20,117 +20,49 @@
 # 02111-1307 USA
 ########################################################################
 
-# Define the root of the toolkit source tree
-PACKAGEROOT := $(shell pwd)
-
-# Vrui package root directory.
-# NOTE: This is not the Vrui installation directory, like in most other
-# makefiles for Vrui-based applications, but the directory in which Vrui
-# itself was built. This is because the collaboration infrastructure is
-# an extension of Vrui itself.
-VRUIPACKAGEROOT := $(HOME)/src/Vrui-2.1-001
-
-# Include definitions for the system environment
-include $(VRUIPACKAGEROOT)/BuildRoot/SystemDefinitions
-include $(VRUIPACKAGEROOT)/BuildRoot/Packages
-
-# Root directory for the software installation
-# NOTE: This must be the same directory into which Vrui itself was
-# installed.
-INSTALLDIR = $(HOME)/Vrui-2.1
-
-# Root directory for vislet plugins underneath Vrui's library directory.
-# This needs to be changed if Vrui's vislet directory was changed in
-# Vrui's makefile.
-VISLETPLUGINEXT = VRVislets
+# Directory containing the Vrui build system. The directory below
+# matches the default Vrui installation; if Vrui's installation
+# directory was changed during Vrui's installation, the directory below
+# must be adapted.
+VRUI_MAKEDIR := $(HOME)/Vrui-2.2/share/make
 
 # Root directory for protocol plugins underneath Vrui's library
 # directory:
-PROTOCOLPLUGINEXT = CollaborationPlugins
+COLLABORATIONPLUGINSDIREXT = CollaborationPlugins
 
 # Uncomment the following line to receive status messages from the
 # protocol engine:
 # CFLAGS += -DVERBOSE
 
-# Set this to 1 if Vrui executables and shared libraries shall contain
-# links to any shared libraries they link to. This will relieve a user
-# from having to set up a dynamic library search path.
-USE_RPATH = 1
-
-# This setting must match the same setting in Vrui's makefile.
-GLSUPPORT_USE_TLS = 0
-
 ########################################################################
 # Everything below here should not have to be changed
 ########################################################################
 
-# Specify version of created dynamic shared libraries
-MAJORLIBVERSION = 1
-MINORLIBVERSION = 6
+# Define the root of the toolkit source tree
+PACKAGEROOT := $(shell pwd)
 
-# Specify default optimization/debug level
-ifdef DEBUG
-  DEFAULTDEBUGLEVEL = 3
-  DEFAULTOPTLEVEL = 0
-else
-  DEFAULTDEBUGLEVEL = 0
-  DEFAULTOPTLEVEL = 3
-endif
+# Specify version of created dynamic shared libraries
+COLLABORATION_VERSION = 2000
+MAJORLIBVERSION = 2
+MINORLIBVERSION = 0
+COLLABORATION_NAME := Collaboration-$(MAJORLIBVERSION).$(MINORLIBVERSION)
+
+# Include definitions for the system environment and system-provided
+# packages
+include $(VRUI_MAKEDIR)/SystemDefinitions
+include $(VRUI_MAKEDIR)/Packages.System
+include $(VRUI_MAKEDIR)/Configuration.Vrui
+include $(VRUI_MAKEDIR)/Packages.Vrui
+include $(PACKAGEROOT)/BuildRoot/Packages.Collaboration
+
+# Override the include file and library search directories:
+EXTRACINCLUDEFLAGS += -I$(PACKAGEROOT)
+EXTRALINKDIRFLAGS += -L$(PACKAGEROOT)/$(MYLIBEXT)
 
 # Set destination directory for libraries and plugins:
-ifdef DEBUG
-  LIBDESTDIR = $(PACKAGEROOT)/$(LIBEXT)/debug
-else
-  LIBDESTDIR = $(PACKAGEROOT)/$(LIBEXT)
-endif
-VISLETDESTDIR = $(LIBDESTDIR)/$(VISLETPLUGINEXT)
-PLUGINDESTDIR = $(LIBDESTDIR)/$(PROTOCOLPLUGINEXT)
-
-# Directories for installation components
-HEADERINSTALLDIR = $(INSTALLDIR)/$(INCLUDEEXT)
-ifdef DEBUG
-  LIBINSTALLDIR = $(INSTALLDIR)/$(LIBEXT)/debug
-  EXECUTABLEINSTALLDIR = $(INSTALLDIR)/$(BINEXT)/debug
-else
-  LIBINSTALLDIR = $(INSTALLDIR)/$(LIBEXT)
-  EXECUTABLEINSTALLDIR = $(INSTALLDIR)/$(BINEXT)
-endif
-VISLETINSTALLDIR = $(LIBINSTALLDIR)/$(VISLETPLUGINEXT)
-PLUGININSTALLDIR = $(LIBINSTALLDIR)/$(PROTOCOLPLUGINEXT)
-ETCINSTALLDIR = $(INSTALLDIR)/etc
-SHAREINSTALLDIR = $(INSTALLDIR)/share
-
-########################################################################
-# Definitions for required software packages
-########################################################################
-
-# The SPEEX speech coding library:
-SPEEX_BASEDIR = /usr
-SPEEX_DEPENDS = 
-SPEEX_INCLUDE = 
-SPEEX_LIBDIR  = 
-SPEEX_LIBS    = -lspeex
-
-# The ogg multimedia container library:
-OGG_BASEDIR = /usr
-OGG_DEPENDS = 
-OGG_INCLUDE = 
-OGG_LIBDIR  = 
-OGG_LIBS    = -logg
-
-# The Theora video codec library:
-THEORA_BASEDIR = /usr
-THEORA_DEPENDS = OGG
-THEORA_INCLUDE = 
-THEORA_LIBDIR  = 
-THEORA_LIBS    = -ltheora
-
-# Package definition for Vrui collaboration infrastructure:
-MYCOLLABORATION_BASEDIR     = $(PACKAGEROOT)
-MYCOLLABORATION_DEPENDS     = MYVRUI
-MYCOLLABORATION_INCLUDE     = -I$(MYCOLLABORATION_BASEDIR)
-MYCOLLABORATION_LIBDIR      = -L$(MYCOLLABORATION_BASEDIR)/$(MYLIBEXT)
-MYCOLLABORATION_LIBS        = -lCollaboration.$(LDEXT)
+LIBDESTDIR := $(PACKAGEROOT)/$(MYLIBEXT)
+VISLETDESTDIR := $(LIBDESTDIR)/Vislets
+PLUGINDESTDIR := $(LIBDESTDIR)/Plugins
 
 ########################################################################
 # Specify additional compiler and linker flags
@@ -149,7 +81,8 @@ PLUGINNAME = $(PLUGINDESTDIR)/lib$(1).$(PLUGINFILEEXT)
 
 ########################################################################
 # List packages used by this project
-# (Supported packages can be found in ./BuildRoot/Packages)
+# (Supported packages can be found in
+# $(VRUI_MAKEDIR)/BuildRoot/Packages)
 ########################################################################
 
 PACKAGES = 
@@ -159,15 +92,16 @@ PACKAGES =
 ########################################################################
 
 LIBRARIES = 
-VISLETS = 
 PLUGINS = 
+VISLETS = 
 EXECUTABLES = 
 
 #
-# The only installed library:
+# The server- and client-side libraries:
 #
 
-LIBRARY_NAMES = libCollaboration
+LIBRARY_NAMES = libCollaborationServer \
+                libCollaborationClient
 
 LIBRARIES += $(LIBRARY_NAMES:%=$(call LIBRARYNAME,%))
 
@@ -175,16 +109,23 @@ LIBRARIES += $(LIBRARY_NAMES:%=$(call LIBRARYNAME,%))
 # The protocol plugins:
 #
 
-PLUGIN_NAMES = FooServer \
-               FooClient \
-               CheriaServer \
-               CheriaClient \
-               GrapheinServer \
-               GrapheinClient \
-               AgoraServer \
-               AgoraClient
+SERVERPLUGIN_NAMES = FooServer \
+                     CheriaServer \
+                     GrapheinServer \
+                     AgoraServer
 
-PLUGINS += $(PLUGIN_NAMES:%=$(call PLUGINNAME,%))
+SERVERPLUGINS = $(SERVERPLUGIN_NAMES:%=$(call PLUGINNAME,%))
+
+PLUGINS += $(SERVERPLUGINS)
+
+CLIENTPLUGIN_NAMES = FooClient \
+                     CheriaClient \
+                     GrapheinClient \
+                     AgoraClient
+
+CLIENTPLUGINS = $(CLIENTPLUGIN_NAMES:%=$(call PLUGINNAME,%))
+
+PLUGINS += $(CLIENTPLUGINS)
 
 #
 # The vislet plugins:
@@ -206,31 +147,55 @@ EXECUTABLES += $(EXEDIR)/CollaborationServer
 
 EXECUTABLES += $(EXEDIR)/CollaborationClientTest
 
-ALL = $(LIBRARIES) $(PLUGINS) $(VISLETS) $(EXECUTABLES)
+# Set the name of the make configuration file:
+MAKECONFIGFILE = share/Configuration.Collaboration
+
+ALL = $(LIBRARIES) $(EXECUTABLES) $(PLUGINS) $(VISLETS) $(MAKECONFIGFILE)
 
 .PHONY: all
 all: config $(ALL)
 
-# Make all plugins, vislets, and executables depend on collaboration library:
-$(PLUGINS) $(VISLETS) $(EXECUTABLES): $(call LIBRARYNAME,libCollaboration)
+# Make all server components depend on collaboration server library:
+$(SERVERPLUGINS) $(EXEDIR)/CollaborationServer: $(call LIBRARYNAME,libCollaborationServer)
+
+# Make all client components depend on collaboration client library:
+$(CLIENTPLUGINS) $(VISLETS) $(EXEDIR)/CollaborationClientTest: $(call LIBRARYNAME,libCollaborationClient)
 
 ########################################################################
 # Pseudo-target to print configuration options
 ########################################################################
 
 .PHONY: config
-config:
+config: Configure-End
+
+.PHONY: Configure-Begin
+Configure-Begin:
 	@echo "---- Configured Vrui collaboration infrastructure options: ----"
-	@echo "Vrui package root directory: $(VRUIPACKAGEROOT)"
-ifneq ($(GLSUPPORT_USE_TLS),0)
-	@echo "Multithreaded rendering enabled"
+	@echo "Installation directory: $(VRUI_PACKAGEROOT)"
+	@echo "Protocol plug-in directory: $(PLUGININSTALLDIR)/$(COLLABORATIONPLUGINSDIREXT)"
+	@echo "Vislet plug-in directory: $(PLUGININSTALLDIR)/$(VRVISLETSDIREXT)"
+ifneq ($(SYSTEM_HAVE_SPEEX),0)
+	@echo "Audio transmission in Agora plug-in enabled"
 else
-	@echo "Multithreaded rendering disabled"
+	@echo "Audio transmission in Agora plug-in disabled"
 endif
-	@echo "Installation directory: $(INSTALLDIR)"
-	@echo "Vislet plug-in directory: $(VISLETINSTALLDIR)"
-	@echo "Protocol plug-in directory: $(PLUGININSTALLDIR)"
+ifneq ($(SYSTEM_HAVE_THEORA),0)
+	@echo "Video transmission in Agora plug-in enabled"
+else
+	@echo "Video transmission in Agora plug-in disabled"
+endif
+ifeq ($(SYSTEM),LINUX)
+	@echo "Video capture in Agora plug-in enabled"
+else
+	@echo "Video capture in Agora plug-in disabled"
+endif
+
+.PHONY: Configure-End
+Configure-End: Configure-Begin
+Configure-End:
 	@echo "--------"
+
+$(wildcard *.cpp Collaboration/*.cpp): config
 
 ########################################################################
 # Specify other actions to be performed on a `make clean'
@@ -249,51 +214,82 @@ extrasqueakyclean:
 	-rm -rf $(PACKAGEROOT)/$(LIBEXT)
 
 # Include basic makefile
-include $(VRUIPACKAGEROOT)/BuildRoot/BasicMakefile
+include $(VRUI_MAKEDIR)/BasicMakefile
 
 ########################################################################
 # Specify build rules for dynamic shared objects
 ########################################################################
 
 #
-# Function to get the build dependencies of a package
+# The Vrui collaboration infrastructure:
 #
 
-DEPENDENCIES = $(patsubst -l%.$(LDEXT),$(call LIBRARYNAME,lib%),$(foreach PACKAGENAME,$(filter MY%,$($(1)_DEPENDS)),$($(PACKAGENAME)_LIBS)))
+LIBCOLLABORATION_HEADERS = Collaboration/Protocol.h \
+                           Collaboration/ProtocolServer.h \
+                           Collaboration/ProtocolClient.h \
+                           Collaboration/CollaborationProtocol.h \
+                           Collaboration/CollaborationServer.h \
+                           Collaboration/CollaborationClient.h
 
 #
-# The Vrui collaboration infrastructure
+# The Vrui collaboration infrastructure (server side):
 #
 
-COLLABORATION_HEADERS = Collaboration/CollaborationPipe.h \
-                        Collaboration/CollaborationServer.h \
-                        Collaboration/CollaborationClient.h \
-                        Collaboration/ProtocolServer.h \
-                        Collaboration/ProtocolClient.h
+LIBCOLLABORATIONSERVER_SOURCES = Collaboration/CollaborationProtocol.cpp \
+                                 Collaboration/ProtocolServer.cpp \
+                                 Collaboration/CollaborationServer.cpp
 
-COLLABORATION_SOURCES = Collaboration/CollaborationPipe.cpp \
-                        Collaboration/CollaborationServer.cpp \
-                        Collaboration/CollaborationClient.cpp \
-                        Collaboration/ProtocolServer.cpp \
-                        Collaboration/ProtocolClient.cpp
-
-$(OBJDIR)/Collaboration/CollaborationServer.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/lib%s.$(PLUGINFILEEXT)"'
+$(OBJDIR)/Collaboration/CollaborationServer.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/$(COLLABORATIONPLUGINSDIREXT)/lib%s.$(PLUGINFILEEXT)"'
 $(OBJDIR)/Collaboration/CollaborationServer.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
-$(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/lib%s.$(PLUGINFILEEXT)"'
+
+$(call LIBRARYNAME,libCollaborationServer): PACKAGES += $(MYCOLLABORATIONSERVER_DEPENDS)
+$(call LIBRARYNAME,libCollaborationServer): EXTRACINCLUDEFLAGS += $(MYCOLLABORATIONSERVER_INCLUDE)
+$(call LIBRARYNAME,libCollaborationServer): CFLAGS += $(MYCOLLABORATIONSERVER_CFLAGS)
+$(call LIBRARYNAME,libCollaborationServer): $(LIBCOLLABORATIONSERVER_SOURCES:%.cpp=$(OBJDIR)/%.o)
+.PHONY: libCollaborationServer
+libCollaborationServer: $(call LIBRARYNAME,libCollaborationServer)
+
+#
+# The Vrui collaboration infrastructure (client side):
+#
+
+LIBCOLLABORATIONCLIENT_SOURCES = Collaboration/CollaborationProtocol.cpp \
+                                 Collaboration/ProtocolClient.cpp \
+                                 Collaboration/CollaborationClient.cpp
+
+$(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATION_PLUGINDSONAMETEMPLATE='"$(PLUGININSTALLDIR)/$(COLLABORATIONPLUGINSDIREXT)/lib%s.$(PLUGINFILEEXT)"'
 $(OBJDIR)/Collaboration/CollaborationClient.o: CFLAGS += -DCOLLABORATION_CONFIGFILENAME='"$(ETCINSTALLDIR)/Collaboration.cfg"'
 
-$(call LIBRARYNAME,libCollaboration): PACKAGES += $(MYCOLLABORATION_DEPENDS)
-$(call LIBRARYNAME,libCollaboration): EXTRACINCLUDEFLAGS += $(MYCOLLABORATION_INCLUDE)
-$(call LIBRARYNAME,libCollaboration): $(COLLABORATION_SOURCES:%.cpp=$(OBJDIR)/%.o)
-.PHONY: libCollaboration
-libCollaboration: $(call LIBRARYNAME,libCollaboration)
+$(call LIBRARYNAME,libCollaborationClient): PACKAGES += $(MYCOLLABORATIONCLIENT_DEPENDS)
+$(call LIBRARYNAME,libCollaborationClient): EXTRACINCLUDEFLAGS += $(MYCOLLABORATIONCLIENT_INCLUDE)
+$(call LIBRARYNAME,libCollaborationClient): CFLAGS += $(MYCOLLABORATIONCLIENT_CFLAGS)
+$(call LIBRARYNAME,libCollaborationClient): $(LIBCOLLABORATIONCLIENT_SOURCES:%.cpp=$(OBJDIR)/%.o)
+.PHONY: libCollaborationClient
+libCollaborationClient: $(call LIBRARYNAME,libCollaborationClient)
+
+#
+# The collaboration server test program:
+#
+
+$(EXEDIR)/CollaborationServer: PACKAGES += MYCOLLABORATIONSERVER MYMISC
+$(EXEDIR)/CollaborationServer: $(OBJDIR)/CollaborationServerMain.o
+.PHONY: CollaborationServer
+CollaborationServer: $(EXEDIR)/CollaborationServer
+
+#
+# The collaboration client test program:
+#
+
+$(EXEDIR)/CollaborationClientTest: PACKAGES += MYCOLLABORATIONCLIENT MYVRUI MYGLMOTIF MYMISC
+$(EXEDIR)/CollaborationClientTest: $(OBJDIR)/CollaborationClientTest.o
+.PHONY: CollaborationClientTest
+CollaborationClientTest: $(EXEDIR)/CollaborationClientTest
 
 #
 # The collaboration protocol plugins:
 #
 
 # Implicit rule for creating protocol plug-ins:
-$(call PLUGINNAME,%): PACKAGES += MYCOLLABORATION
 $(call PLUGINNAME,%): CFLAGS += $(CPLUGINFLAGS)
 $(call PLUGINNAME,%): $(OBJDIR)/Collaboration/%.o
 	@mkdir -p $(PLUGINDESTDIR)
@@ -304,36 +300,48 @@ else
 	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 endif
 
-$(call PLUGINNAME,CheriaServer): $(OBJDIR)/Collaboration/CheriaPipe.o \
+# Dependencies for protocol plug-ins:
+$(SERVERPLUGIN_NAMES:%=$(call PLUGINNAME,%)): PACKAGES += MYCOLLABORATIONSERVER
+$(CLIENTPLUGIN_NAMES:%=$(call PLUGINNAME,%)): PACKAGES += MYCOLLABORATIONCLIENT
+
+$(call PLUGINNAME,CheriaServer): $(OBJDIR)/Collaboration/CheriaProtocol.o \
                                  $(OBJDIR)/Collaboration/CheriaServer.o
 
-$(call PLUGINNAME,CheriaClient): $(OBJDIR)/Collaboration/CheriaPipe.o \
+$(call PLUGINNAME,CheriaClient): $(OBJDIR)/Collaboration/CheriaProtocol.o \
                                  $(OBJDIR)/Collaboration/CheriaClient.o
 
-$(call PLUGINNAME,GrapheinServer): $(OBJDIR)/Collaboration/GrapheinPipe.o \
+$(call PLUGINNAME,GrapheinServer): PACKAGES += MYGLWRAPPERS
+$(call PLUGINNAME,GrapheinServer): $(OBJDIR)/Collaboration/GrapheinProtocol.o \
                                    $(OBJDIR)/Collaboration/GrapheinServer.o
 
-$(call PLUGINNAME,GrapheinClient): $(OBJDIR)/Collaboration/GrapheinPipe.o \
+$(call PLUGINNAME,GrapheinClient): $(OBJDIR)/Collaboration/GrapheinProtocol.o \
                                    $(OBJDIR)/Collaboration/GrapheinClient.o
 
-$(call PLUGINNAME,AgoraServer): $(OBJDIR)/Collaboration/AgoraPipe.o \
+$(call PLUGINNAME,AgoraServer): $(OBJDIR)/Collaboration/AgoraProtocol.o \
                                 $(OBJDIR)/Collaboration/AgoraServer.o
 
-$(call PLUGINNAME,AgoraClient): PACKAGES += THEORA OGG SPEEX
-$(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
-                                $(OBJDIR)/Collaboration/SpeexDecoder.o \
-                                $(OBJDIR)/Collaboration/AgoraPipe.o \
-                                $(OBJDIR)/Collaboration/AgoraClient.o
+$(call PLUGINNAME,AgoraClient): PACKAGES += MYALSUPPORT MYVIDEO MYSOUND
+ifneq ($(SYSTEM_HAVE_SPEEX),0)
+  $(call PLUGINNAME,AgoraClient): PACKAGES += SPEEX
+  $(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/SpeexEncoder.o \
+                                  $(OBJDIR)/Collaboration/SpeexDecoder.o \
+                                  $(OBJDIR)/Collaboration/AgoraProtocol.o \
+                                  $(OBJDIR)/Collaboration/AgoraClient.o
+else
+  $(call PLUGINNAME,AgoraClient): $(OBJDIR)/Collaboration/AgoraProtocol.o \
+                                  $(OBJDIR)/Collaboration/AgoraClient.o
+endif
 
 # Mark all protocol plugin object files as intermediate:
-.SECONDARY: $(PLUGIN_NAMES:%=$(OBJDIR)/Collaboration/%.o)
+.SECONDARY: $(SERVERPLUGIN_NAMES:%=$(OBJDIR)/Collaboration/%.o)
+.SECONDARY: $(CLIENTPLUGIN_NAMES:%=$(OBJDIR)/Collaboration/%.o)
 
 #
 # The collaboration client vislet:
 #
 
 # Implicit rule for creating vislet plug-ins:
-$(call VISLETNAME,%): PACKAGES += MYCOLLABORATION
+$(call VISLETNAME,%): PACKAGES += MYCOLLABORATIONCLIENT
 $(call VISLETNAME,%): CFLAGS += $(CPLUGINFLAGS)
 $(call VISLETNAME,%): $(OBJDIR)/%Vislet.o
 	@mkdir -p $(VISLETDESTDIR)
@@ -349,57 +357,52 @@ $(call VISLETNAME,CollaborationClient): $(OBJDIR)/CollaborationClientVislet.o
 # Mark all vislet plugin object files as intermediate:
 .SECONDARY: $(VISLET_NAMES:%=$(OBJDIR)/%Vislet.o)
 
-#
-# The collaboration server test program:
-#
-
-$(EXEDIR)/CollaborationServer: PACKAGES += MYCOLLABORATION
-$(EXEDIR)/CollaborationServer: $(OBJDIR)/CollaborationServerMain.o
-.PHONY: CollaborationServer
-CollaborationServer: $(EXEDIR)/CollaborationServer
-
-#
-# The collaboration client test program:
-#
-
-$(EXEDIR)/CollaborationClientTest: PACKAGES += MYCOLLABORATION
-$(EXEDIR)/CollaborationClientTest: $(OBJDIR)/CollaborationClientTest.o
-.PHONY: CollaborationClientTest
-CollaborationClientTest: $(EXEDIR)/CollaborationClientTest
-
 ########################################################################
 # Specify installation rules for header files, libraries, executables,
 # configuration files, and shared files.
 ########################################################################
 
-# Sequence to create symlinks for dynamic libraries:
-# First argument: library name
-define CREATE_SYMLINK
-@-rm -f $(LIBINSTALLDIR)/$(call DSONAME,$(1)) $(LIBINSTALLDIR)/$(call LINKDSONAME,$(1))
-@cd $(LIBINSTALLDIR) ; ln -s $(call FULLDSONAME,$(1)) $(call DSONAME,$(1))
-@cd $(LIBINSTALLDIR) ; ln -s $(call FULLDSONAME,$(1)) $(call LINKDSONAME,$(1))
+# Pseudo-target to dump Collaboration Infrastructure configuration settings
+$(MAKECONFIGFILE): config
+	@echo Creating configuration makefile fragment...
+	@echo '# Makefile fragment for Collaboration configuration options' > $(MAKECONFIGFILE)
+	@echo '# Autogenerated by Collaboration installation on $(shell date)' >> $(MAKECONFIGFILE)
+	@echo >> $(MAKECONFIGFILE)
+	@echo '# Version information:'>> $(MAKECONFIGFILE)
+	@echo 'COLLABORATION_VERSION = $(COLLABORATION_VERSION)' >> $(MAKECONFIGFILE)
+	@echo 'COLLABORATION_NAME = $(COLLABORATION_NAME)' >> $(MAKECONFIGFILE)
+	@echo >> $(MAKECONFIGFILE)
+	@echo '# Installation directories:'>> $(MAKECONFIGFILE)
+	@echo 'COLLABORATIONPLUGINSDIREXT = $(COLLABORATIONPLUGINSDIREXT)' >> $(MAKECONFIGFILE)
 
-endef
+ifdef INSTALLPREFIX
+  HEADERINSTALLDIR := $(INSTALLPREFIX)/$(HEADERINSTALLDIR)
+  LIBINSTALLDIR := $(INSTALLPREFIX)/$(LIBINSTALLDIR)
+  PLUGININSTALLDIR := $(INSTALLPREFIX)/$(PLUGININSTALLDIR)
+  EXECUTABLEINSTALLDIR := $(INSTALLPREFIX)/$(EXECUTABLEINSTALLDIR)
+  ETCINSTALLDIR := $(INSTALLPREFIX)/$(ETCINSTALLDIR)
+  SHAREINSTALLDIR := $(INSTALLPREFIX)/$(SHAREINSTALLDIR)
+endif
 
 install: all
 # Install all header files in HEADERINSTALLDIR:
 	@echo Installing header files...
 	@install -d $(HEADERINSTALLDIR)/Collaboration
-	@install -m u=rw,go=r $(COLLABORATION_HEADERS) $(HEADERINSTALLDIR)/Collaboration
+	@install -m u=rw,go=r $(LIBCOLLABORATION_HEADERS) $(HEADERINSTALLDIR)/Collaboration
 # Install all library files in LIBINSTALLDIR:
 	@echo Installing libraries...
 	@install -d $(LIBINSTALLDIR)
 	@install $(LIBRARIES) $(LIBINSTALLDIR)
 	@echo Configuring run-time linker...
 	$(foreach LIBNAME,$(LIBRARY_NAMES),$(call CREATE_SYMLINK,$(LIBNAME)))
-# Install all protocol plugins in PLUGININSTALLDIR:
+# Install all protocol plugins in PLUGININSTALLDIR/COLLABORATIONPLUGINSDIREXT:
 	@echo Installing protocol plugins...
-	@install -d $(PLUGININSTALLDIR)
-	@install $(PLUGINS) $(PLUGININSTALLDIR)
-# Install all vislet plugins in VISLETINSTALLDIR:
+	@install -d $(PLUGININSTALLDIR)/$(COLLABORATIONPLUGINSDIREXT)
+	@install $(PLUGINS) $(PLUGININSTALLDIR)/$(COLLABORATIONPLUGINSDIREXT)
+# Install all vislet plugins in PLUGININSTALLDIR/VRVISLETSDIREXT:
 	@echo Installing vislet plugins...
-	@install -d $(VISLETINSTALLDIR)
-	@install $(VISLETS) $(VISLETINSTALLDIR)
+	@install -d $(PLUGININSTALLDIR)/$(VRVISLETSDIREXT)
+	@install $(VISLETS) $(PLUGININSTALLDIR)/$(VRVISLETSDIREXT)
 # Install all binaries in EXECUTABLEINSTALLDIR:
 	@echo Installing executables...
 	@install -d $(EXECUTABLEINSTALLDIR)
@@ -408,25 +411,26 @@ install: all
 	@echo Installing configuration files...
 	@install -d $(ETCINSTALLDIR)
 	@install -m u=rw,go=r share/Collaboration.cfg $(ETCINSTALLDIR)
-
-# Sequence to destroy symlinks for dynamic libraries:
-# First argument: library name
-define DESTROY_SYMLINK
-@-rm -f $(LIBINSTALLDIR)/$(call DSONAME,$(1)) $(LIBINSTALLDIR)/$(call LINKDSONAME,$(1))
-
-endef
+# Install the package and configuration files in SHAREINSTALLDIR/make:
+	@echo Installing makefile fragments...
+	@install -d $(SHAREINSTALLDIR)/make
+	@install -m u=rw,go=r BuildRoot/Packages.Collaboration $(SHAREINSTALLDIR)/make
+	@install -m u=rw,go=r $(MAKECONFIGFILE) $(SHAREINSTALLDIR)/make
 
 uninstall:
 	@echo Removing header files...
 	@rm -rf $(HEADERINSTALLDIR)/Collaboration
 	@echo Removing libraries...
-	@rm -f $(LIBRARIES)
+	@rm -f $(LIBRARIES:$(LIBDESTDIR)/%=$(LIBINSTALLDIR)/%)
 	$(foreach LIBNAME,$(LIBRARY_NAMES),$(call DESTROY_SYMLINK,$(LIBNAME)))
 	@echo Removing protocol plugins...
-	@rm -rf $(PLUGININSTALLDIR)
+	@rm -rf $(PLUGININSTALLDIR)/$(COLLABORATIONPLUGINSDIREXT)
 	@echo Removing vislet plugins...
-	@rm -f $(VISLETS)
+	@rm -f $(VISLETS:$(VISLETDESTDIR)/%=$(PLUGININSTALLDIR)/$(VRVISLETSDIREXT)/%)
 	@echo Removing executables...
-	@rm -f $(EXECUTABLES)
+	@rm -f $(EXECUTABLES:$(EXEDIR)/%=$(EXECUTABLEINSTALLDIR)/%)
 	@echo Removing configuration files...
 	@rm -f $(ETCINSTALLDIR)/Collaboration.cfg
+	@echo Removing makefile fragments...
+	@rm -f $(SHAREINSTALLDIR)/make/Packages.Collaboration
+	@rm -f $(SHAREINSTALLDIR)/make/Configuration.Collaboration

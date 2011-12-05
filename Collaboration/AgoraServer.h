@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraServer - Server object to implement the Agora group audio protocol.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -20,19 +20,17 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef AGORASERVER_INCLUDED
-#define AGORASERVER_INCLUDED
+#ifndef COLLABORATION_AGORASERVER_INCLUDED
+#define COLLABORATION_AGORASERVER_INCLUDED
 
 #include <Threads/TripleBuffer.h>
 #include <Threads/DropoutBuffer.h>
-
 #include <Collaboration/ProtocolServer.h>
-
-#include <Collaboration/AgoraPipe.h>
+#include <Collaboration/AgoraProtocol.h>
 
 namespace Collaboration {
 
-class AgoraServer:public ProtocolServer,public AgoraPipe
+class AgoraServer:public ProtocolServer,private AgoraProtocol
 	{
 	/* Embedded classes: */
 	protected:
@@ -44,12 +42,12 @@ class AgoraServer:public ProtocolServer,public AgoraPipe
 		private:
 		size_t speexFrameSize; // Client's SPEEX frame size
 		size_t speexPacketSize; // Client's SPEEX packet size
-		Threads::DropoutBuffer<char> speexPacketBuffer; // Buffer holding encoded SPEEX audio packets sent by the client
+		Threads::DropoutBuffer<Byte> speexPacketBuffer; // Buffer holding encoded SPEEX audio packets sent by the client
 		Point headPosition; // Client's current head position in navigational space
 		
 		bool hasTheora; // Flag whether the client is streaming video data
-		unsigned int theoraHeadersSize; // Size of the client's Theora stream header packets
-		unsigned char* theoraHeaders; // A little-endian buffer containing the clients Theora stream header packets
+		size_t theoraHeadersSize; // Size of the client's Theora stream header packets
+		Byte* theoraHeaders; // A little-endian buffer containing the clients Theora stream header packets
 		Threads::TripleBuffer<VideoPacket> theoraPacketBuffer; // Triple buffer containing encoded video frames from the client
 		OGTransform videoTransform; // Client's current transformation from local video space to shared navigational space
 		Scalar videoSize[2]; // Client's virtual video size in client's video space
@@ -70,10 +68,10 @@ class AgoraServer:public ProtocolServer,public AgoraPipe
 	
 	/* Methods from ProtocolServer: */
 	virtual const char* getName(void) const;
-	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe);
-	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
-	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
-	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe);
+	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe);
+	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe);
+	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe);
 	virtual void beforeServerUpdate(ProtocolServer::ClientState* cs);
 	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
 	};

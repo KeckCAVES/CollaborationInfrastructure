@@ -1,7 +1,7 @@
 /***********************************************************************
 FooClient - Dummy protocol plug-in class to stress-test the plug-in
 mechanism.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -23,14 +23,11 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/FooClient.h>
 
+#if DUMP_PROTOCOL
 #include <iostream>
+#endif
 #include <Misc/ThrowStdErr.h>
-
-#include <Collaboration/CollaborationPipe.h>
-
-#define DUMP_PROTOCOL 1
-
-#include <Collaboration/FooCrapSender.h>
+#include <Comm/NetPipe.h>
 
 namespace Collaboration {
 
@@ -88,14 +85,17 @@ unsigned int FooClient::getNumMessages(void) const
 	return 1;
 	}
 
-void FooClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+void FooClient::initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection)
 	{
+	/* Call base class method: */
+	ProtocolClient::initialize(sClient,configFileSection);
+	
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::initialize"<<std::endl;
 	#endif
 	}
 
-void FooClient::sendConnectRequest(CollaborationPipe& pipe)
+void FooClient::sendConnectRequest(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::sendConnectRequest"<<std::endl;
@@ -103,22 +103,22 @@ void FooClient::sendConnectRequest(CollaborationPipe& pipe)
 	
 	/* Need to send fixed-length random crap: */
 	unsigned int messageSize=Math::randUniformCO(0,64)+32;
-	pipe.write<unsigned int>(messageSize+sizeof(unsigned int)+sizeof(unsigned int)); // First time is for base collaboration server!
-	pipe.write<unsigned int>(messageSize); // This one is for Foo server!
+	pipe.write<Card>(messageSize+sizeof(Card)+sizeof(Card)); // First time is for base collaboration server!
+	pipe.write<Card>(messageSize); // This one is for Foo server!
 	unsigned int sumTotal=0;
 	for(unsigned int i=0;i<messageSize;++i)
 		{
-		unsigned char value=(unsigned char)(Math::randUniformCO(0,256));
-		pipe.write<unsigned char>(value);
+		Byte value=Byte(Math::randUniformCO(0,256));
+		pipe.write<Byte>(value);
 		sumTotal+=value;
 		}
-	pipe.write<unsigned int>(sumTotal);
+	pipe.write<Card>(sumTotal);
 	#if DUMP_PROTOCOL
 	std::cout<<"Sent "<<messageSize<<" bytes with checksum "<<sumTotal<<std::endl;
 	#endif
 	}
 
-void FooClient::receiveConnectReply(CollaborationPipe& pipe)
+void FooClient::receiveConnectReply(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::receiveConnectReply"<<std::endl;
@@ -127,7 +127,7 @@ void FooClient::receiveConnectReply(CollaborationPipe& pipe)
 	receiveRandomCrap(pipe);
 	}
 
-void FooClient::receiveConnectReject(CollaborationPipe& pipe)
+void FooClient::receiveConnectReject(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::receiveConnectReject"<<std::endl;
@@ -136,7 +136,7 @@ void FooClient::receiveConnectReject(CollaborationPipe& pipe)
 	receiveRandomCrap(pipe);
 	}
 
-void FooClient::sendDisconnectRequest(CollaborationPipe& pipe)
+void FooClient::sendDisconnectRequest(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::sendDisconnectRequest"<<std::endl;
@@ -145,7 +145,7 @@ void FooClient::sendDisconnectRequest(CollaborationPipe& pipe)
 	sendRandomCrap(pipe);
 	}
 
-void FooClient::receiveDisconnectReply(CollaborationPipe& pipe)
+void FooClient::receiveDisconnectReply(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::receiveDisconnectReply"<<std::endl;
@@ -154,16 +154,7 @@ void FooClient::receiveDisconnectReply(CollaborationPipe& pipe)
 	receiveRandomCrap(pipe);
 	}
 
-void FooClient::sendClientUpdate(CollaborationPipe& pipe)
-	{
-	#if DUMP_PROTOCOL
-	std::cout<<"FooClient::sendClientUpdate"<<std::endl;
-	#endif
-	
-	sendRandomCrap(pipe);
-	}
-
-ProtocolClient::RemoteClientState* FooClient::receiveClientConnect(CollaborationPipe& pipe)
+ProtocolClient::RemoteClientState* FooClient::receiveClientConnect(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::receiveClientConnect"<<std::endl;
@@ -174,29 +165,18 @@ ProtocolClient::RemoteClientState* FooClient::receiveClientConnect(Collaboration
 	return new RemoteClientState;
 	}
 
-void FooClient::receiveClientDisconnect(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)
-	{
-	#if DUMP_PROTOCOL
-	std::cout<<"FooClient::receiveClientDisconnect"<<std::endl;
-	#endif
-	
-	RemoteClientState* myRcs=dynamic_cast<RemoteClientState*>(rcs);
-	if(myRcs==0)
-		Misc::throwStdErr("FooClient::receiveClientDisconnect: Mismatching remote client state object type");
-	
-	receiveRandomCrap(pipe);
-	}
-
-void FooClient::receiveServerUpdate(CollaborationPipe& pipe)
+bool FooClient::receiveServerUpdate(Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::receiveServerUpdate"<<std::endl;
 	#endif
 	
 	receiveRandomCrap(pipe);
+	
+	return false;
 	}
 
-void FooClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)
+bool FooClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::receiveServerUpdate"<<std::endl;
@@ -207,30 +187,23 @@ void FooClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Colla
 		Misc::throwStdErr("FooClient::receiveServerUpdate: Mismatching remote client state object type");
 	
 	receiveRandomCrap(pipe);
+	
+	return false;
+	}
+
+void FooClient::sendClientUpdate(Comm::NetPipe& pipe)
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooClient::sendClientUpdate"<<std::endl;
+	#endif
+	
+	sendRandomCrap(pipe);
 	}
 
 void FooClient::rejectedByServer(void)
 	{
 	#if DUMP_PROTOCOL
 	std::cout<<"FooClient::rejectedByServer"<<std::endl;
-	#endif
-	}
-
-bool FooClient::handleMessage(unsigned int messageId,CollaborationPipe& pipe)
-	{
-	#if DUMP_PROTOCOL
-	std::cout<<"FooClient::handleMessage"<<std::endl;
-	#endif
-	
-	receiveRandomCrap(pipe);
-	
-	return true;
-	}
-
-void FooClient::beforeClientUpdate(CollaborationPipe& pipe)
-	{
-	#if DUMP_PROTOCOL
-	std::cout<<"FooClient::beforeClientUpdate"<<std::endl;
 	#endif
 	}
 
@@ -308,6 +281,24 @@ void FooClient::alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALCo
 	const RemoteClientState* myRcs=dynamic_cast<const RemoteClientState*>(rcs);
 	if(myRcs==0)
 		Misc::throwStdErr("FooClient::alRenderAction: Mismatching remote client state object type");
+	}
+
+void FooClient::beforeClientUpdate(Comm::NetPipe& pipe)
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooClient::beforeClientUpdate"<<std::endl;
+	#endif
+	}
+
+bool FooClient::handleMessage(unsigned int messageId,Comm::NetPipe& pipe)
+	{
+	#if DUMP_PROTOCOL
+	std::cout<<"FooClient::handleMessage"<<std::endl;
+	#endif
+	
+	receiveRandomCrap(pipe);
+	
+	return true;
 	}
 
 }

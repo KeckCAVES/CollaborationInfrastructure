@@ -25,6 +25,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <string.h>
 #include <stdlib.h>
 #include <iostream>
+#include <Misc/SelfDestructPointer.h>
 #include <GLMotif/PopupMenu.h>
 #include <GLMotif/Menu.h>
 #include <GLMotif/ToggleButton.h>
@@ -80,7 +81,7 @@ CollaborationClientTest::CollaborationClientTest(int& argc,char**& argv,char**& 
 	 collaborationClient(0),mainMenu(0)
 	{
 	/* Create a configuration object: */
-	Collaboration::CollaborationClient::Configuration* cfg=new Collaboration::CollaborationClient::Configuration;
+	Misc::SelfDestructPointer<Collaboration::CollaborationClient::Configuration> cfg(new Collaboration::CollaborationClient::Configuration);
 	
 	/* Parse the command line: */
 	for(int i=1;i<argc;++i)
@@ -112,11 +113,20 @@ CollaborationClientTest::CollaborationClientTest(int& argc,char**& argv,char**& 
 			}
 		}
 	
-	/* Create the collaboration client: */
-	collaborationClient=new Collaboration::CollaborationClient(cfg);
-	
-	/* Initiate the collaboration protocol: */
-	collaborationClient->connect();
+	try
+		{
+		/* Create the collaboration client: */
+		collaborationClient=new Collaboration::CollaborationClient(cfg.getTarget());
+		cfg.releaseTarget();
+		
+		/* Initiate the collaboration protocol: */
+		collaborationClient->connect();
+		}
+	catch(std::runtime_error err)
+		{
+		/* Print error message and carry on: */
+		std::cerr<<"Unable to connect to collaboration server due to "<<err.what()<<std::endl;
+		}
 	
 	/* Create the main menu: */
 	mainMenu=createMainMenu();

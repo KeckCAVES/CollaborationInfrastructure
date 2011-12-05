@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraClient - Client object to implement the Agora group audio protocol.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -25,10 +25,11 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #include <Misc/FunctionCalls.h>
 #include <Misc/ThrowStdErr.h>
-#include <Misc/ReadBuffer.h>
-#include <Misc/WriteBuffer.h>
 #include <Misc/StandardValueCoders.h>
 #include <Misc/ConfigurationFile.h>
+#include <IO/FixedMemoryFile.h>
+#include <IO/VariableMemoryFile.h>
+#include <Comm/NetPipe.h>
 #include <Geometry/GeometryValueCoders.h>
 #include <GL/gl.h>
 #include <GL/GLContextData.h>
@@ -36,6 +37,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <GLMotif/PopupWindow.h>
 #include <GLMotif/Margin.h>
 #include <GLMotif/RowColumn.h>
+#include <Sound/Config.h>
 #include <Video/Config.h>
 #if VIDEO_CONFIG_HAVE_THEORA
 #include <Video/VideoDevice.h>
@@ -50,11 +52,10 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <AL/ALGeometryWrappers.h>
 #include <AL/ALContextData.h>
 #include <Vrui/Vrui.h>
-
-#include <Collaboration/CollaborationPipe.h>
-#include <Collaboration/CollaborationClient.h>
+#if SOUND_CONFIG_HAVE_SPEEX
 #include <Collaboration/SpeexEncoder.h>
 #include <Collaboration/SpeexDecoder.h>
+#endif
 
 namespace Collaboration {
 
@@ -63,12 +64,12 @@ Methods of class AgoraClient::RemoteClientState::ALDataItem:
 ***********************************************************/
 
 AgoraClient::RemoteClientState::ALDataItem::ALDataItem(size_t sSpeexFrameSize,Threads::DropoutBuffer<char>& sSpeexPacketQueue)
-	#if ALSUPPORT_CONFIG_HAVE_OPENAL
+	#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 	:speexDecoder(sSpeexFrameSize,sSpeexPacketQueue),
 	 source(0),buffers(0)
 	#endif
 	{
-	#if ALSUPPORT_CONFIG_HAVE_OPENAL
+	#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 	/* Generate the source and the buffers: */
 	alGenSources(1,&source);
 	size_t numBuffers=speexDecoder.getDecodedPacketQueue().getMaxQueueSize();
@@ -87,7 +88,7 @@ AgoraClient::RemoteClientState::ALDataItem::ALDataItem(size_t sSpeexFrameSize,Th
 
 AgoraClient::RemoteClientState::ALDataItem::~ALDataItem(void)
 	{
-	#if ALSUPPORT_CONFIG_HAVE_OPENAL
+	#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 	/* Destroy the source and buffers: */
 	alSourceStop(source);
 	alDeleteSources(1,&source);
@@ -107,7 +108,7 @@ Methods of class AgoraClient::RemoteClientState:
 void* AgoraClient::RemoteClientState::videoDecodingThreadMethod(void)
 	{
 	Threads::Thread::setCancelState(Threads::Thread::CANCEL_ENABLE);
-	Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
+	// Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
 	
 	while(true)
 		{
@@ -170,7 +171,7 @@ AgoraClient::RemoteClientState::~RemoteClientState(void)
 
 void AgoraClient::RemoteClientState::initContext(ALContextData& contextData) const
 	{
-	#if ALSUPPORT_CONFIG_HAVE_OPENAL
+	#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 	if(remoteSpeexFrameSize>0)
 		{
 		#ifdef VERBOSE
@@ -245,7 +246,7 @@ void AgoraClient::RemoteClientState::glRenderAction(GLContextData& contextData) 
 
 void AgoraClient::RemoteClientState::alRenderAction(ALContextData& contextData) const
 	{
-	#if ALSUPPORT_CONFIG_HAVE_OPENAL
+	#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 	/* Get the data item: */
 	ALDataItem* dataItem=contextData.retrieveDataItem<ALDataItem>(this);
 	
@@ -317,6 +318,8 @@ void AgoraClient::videoCaptureCallback(const Video::FrameBuffer* frame)
 	
 	/* Post the new uncompressed frame: */
 	theoraFrameBuffer.postNewValue();
+	if(localVideoWindowShown)
+		Vrui::requestUpdate();
 	
 	/* Feed the new image to the Theora encoder: */
 	theoraEncoder.encodeFrame(theoraFrame);
@@ -348,11 +351,15 @@ void AgoraClient::showVideoDeviceSettingsCallback(GLMotif::ToggleButton::ValueCh
 
 #endif
 
+#if SOUND_CONFIG_HAVE_SPEEX
+
 void AgoraClient::pauseAudioCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
 	{
 	/* Pause or unpause audio transmission: */
 	pauseAudio=cbData->set;
 	}
+
+#endif
 
 #if VIDEO_CONFIG_HAVE_THEORA
 
@@ -393,7 +400,11 @@ void AgoraClient::localVideoWindowCloseCallback(Misc::CallbackData* cbData)
 #endif
 
 AgoraClient::AgoraClient(void)
+	#if SOUND_CONFIG_HAVE_SPEEX
 	:speexEncoder(0),pauseAudio(false),
+	#else
+	:
+	#endif
 	 hasTheora(false),
 	 #if VIDEO_CONFIG_HAVE_THEORA
 	 videoDevice(0),videoExtractor(0),
@@ -407,7 +418,9 @@ AgoraClient::AgoraClient(void)
 
 AgoraClient::~AgoraClient(void)
 	{
+	#if SOUND_CONFIG_HAVE_SPEEX
 	delete speexEncoder;
+	#endif
 	#if VIDEO_CONFIG_HAVE_THEORA
 	delete videoDeviceSettings;
 	delete localVideoWindow;
@@ -429,16 +442,13 @@ const char* AgoraClient::getName(void) const
 	return protocolName;
 	}
 
-unsigned int AgoraClient::getNumMessages(void) const
-	{
-	return numProtocolMessages;
-	}
-
-void AgoraClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+void AgoraClient::initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection)
 	{
 	/************************************
 	Initialize audio and video recording:
 	************************************/
+	
+	#if SOUND_CONFIG_HAVE_SPEEX
 	
 	if(Vrui::isMaster()&&configFileSection.retrieveValue<bool>("./enableRecording",true))
 		{
@@ -460,6 +470,8 @@ void AgoraClient::initialize(CollaborationClient& collaborationClient,Misc::Conf
 			speexEncoder=0;
 			}
 		}
+	
+	#endif
 	
 	#if VIDEO_CONFIG_HAVE_THEORA
 	
@@ -577,11 +589,14 @@ void AgoraClient::initialize(CollaborationClient& collaborationClient,Misc::Conf
 
 bool AgoraClient::haveSettingsDialog(void) const
 	{
-	#if VIDEO_CONFIG_HAVE_THEORA
-	return speexEncoder!=0||videoDevice!=0;
-	#else
-	return speexEncoder!=0;
+	bool result=false;
+	#if SOUND_CONFIG_HAVE_SPEEX
+	result=result||speexEncoder!=0;
 	#endif
+	#if VIDEO_CONFIG_HAVE_THEORA
+	result=result||videoDevice!=0;
+	#endif
+	return result;
 	}
 
 void AgoraClient::buildSettingsDialog(GLMotif::RowColumn* settingsDialog)
@@ -617,52 +632,69 @@ void AgoraClient::buildSettingsDialog(GLMotif::RowColumn* settingsDialog)
 	
 	#endif
 	
-	/* Create toggle buttons to pause audio and video transmission, respectively: */
-	GLMotif::Margin* pauseTogglesMargin=new GLMotif::Margin("PauseTogglesMargin",settingsDialog,false);
-	pauseTogglesMargin->setAlignment(GLMotif::Alignment::LEFT);
-	
-	GLMotif::RowColumn* pauseTogglesBox=new GLMotif::RowColumn("PauseTogglesBox",pauseTogglesMargin,false);
-	pauseTogglesBox->setOrientation(GLMotif::RowColumn::HORIZONTAL);
-	pauseTogglesBox->setPacking(GLMotif::RowColumn::PACK_TIGHT);
-	pauseTogglesBox->setNumMinorWidgets(1);
-	
-	if(speexEncoder!=0)
-		{
-		GLMotif::ToggleButton* pauseAudioToggle=new GLMotif::ToggleButton("PauseAudioToggle",pauseTogglesBox,"Pause Audio");
-		pauseAudioToggle->setBorderWidth(0.0f);
-		pauseAudioToggle->setHAlignment(GLFont::Left);
-		pauseAudioToggle->setToggle(false);
-		pauseAudioToggle->getValueChangedCallbacks().add(this,&AgoraClient::pauseAudioCallback);
-		}
-	
+	bool needPauseToggles=false;
+	#if SOUND_CONFIG_HAVE_SPEEX
+	needPauseToggles=needPauseToggles||speexEncoder!=0;
+	#endif
 	#if VIDEO_CONFIG_HAVE_THEORA
-	
-	if(videoDevice!=0)
-		{
-		GLMotif::ToggleButton* pauseVideoToggle=new GLMotif::ToggleButton("PauseVideoToggle",pauseTogglesBox,"Pause Video");
-		pauseVideoToggle->setBorderWidth(0.0f);
-		pauseVideoToggle->setHAlignment(GLFont::Left);
-		pauseVideoToggle->setToggle(false);
-		pauseVideoToggle->getValueChangedCallbacks().add(this,&AgoraClient::pauseVideoCallback);
-		}
-	
+	needPauseToggles=needPauseToggles||videoDevice!=0;
 	#endif
 	
-	pauseTogglesBox->manageChild();
-	
-	pauseTogglesMargin->manageChild();
+	if(needPauseToggles)
+		{
+		/* Create toggle buttons to pause audio and video transmission, respectively: */
+		GLMotif::Margin* pauseTogglesMargin=new GLMotif::Margin("PauseTogglesMargin",settingsDialog,false);
+		pauseTogglesMargin->setAlignment(GLMotif::Alignment::LEFT);
+		
+		GLMotif::RowColumn* pauseTogglesBox=new GLMotif::RowColumn("PauseTogglesBox",pauseTogglesMargin,false);
+		pauseTogglesBox->setOrientation(GLMotif::RowColumn::HORIZONTAL);
+		pauseTogglesBox->setPacking(GLMotif::RowColumn::PACK_TIGHT);
+		pauseTogglesBox->setNumMinorWidgets(1);
+		
+		#if SOUND_CONFIG_HAVE_SPEEX
+		
+		if(speexEncoder!=0)
+			{
+			GLMotif::ToggleButton* pauseAudioToggle=new GLMotif::ToggleButton("PauseAudioToggle",pauseTogglesBox,"Pause Audio");
+			pauseAudioToggle->setBorderWidth(0.0f);
+			pauseAudioToggle->setHAlignment(GLFont::Left);
+			pauseAudioToggle->setToggle(false);
+			pauseAudioToggle->getValueChangedCallbacks().add(this,&AgoraClient::pauseAudioCallback);
+			}
+		
+		#endif
+		
+		#if VIDEO_CONFIG_HAVE_THEORA
+		
+		if(videoDevice!=0)
+			{
+			GLMotif::ToggleButton* pauseVideoToggle=new GLMotif::ToggleButton("PauseVideoToggle",pauseTogglesBox,"Pause Video");
+			pauseVideoToggle->setBorderWidth(0.0f);
+			pauseVideoToggle->setHAlignment(GLFont::Left);
+			pauseVideoToggle->setToggle(false);
+			pauseVideoToggle->getValueChangedCallbacks().add(this,&AgoraClient::pauseVideoCallback);
+			}
+		
+		#endif
+		
+		pauseTogglesBox->manageChild();
+		
+		pauseTogglesMargin->manageChild();
+		}
 	}
 
-void AgoraClient::sendConnectRequest(CollaborationPipe& pipe)
+void AgoraClient::sendConnectRequest(Comm::NetPipe& pipe)
 	{
 	/* Calculate the length of the following message: */
-	unsigned int messageLength=sizeof(unsigned int)*3; // SPEEX format parameters
-	messageLength+=sizeof(char); // Video streaming flag
+	unsigned int messageLength=sizeof(Card); // Protocol version number
+	messageLength+=sizeof(Card)*3; // SPEEX format parameters
+	messageLength+=sizeof(Byte); // Video streaming flag
 	
 	#if VIDEO_CONFIG_HAVE_THEORA
 	
 	/* Write the Theora encoder's stream header packets into a little-endian temporary buffer: */
-	Misc::WriteBuffer theoraHeaders(Misc::WriteBuffer::LittleEndian);
+	IO::VariableMemoryFile theoraHeaders;
+	theoraHeaders.setEndianness(Misc::LittleEndian);
 	if(theoraEncoder.isValid())
 		{
 		/* Write the headers: */
@@ -670,7 +702,7 @@ void AgoraClient::sendConnectRequest(CollaborationPipe& pipe)
 		theoraEncoder.writeHeaders(comments,theoraHeaders);
 		
 		/* Increase the message size: */
-		messageLength+=sizeof(unsigned int); // Length of header packets
+		messageLength+=sizeof(Card); // Length of header packets
 		messageLength+=theoraHeaders.getDataSize(); // Header packets
 		messageLength+=sizeof(Scalar)*2; // Virtual video size
 		}
@@ -681,48 +713,61 @@ void AgoraClient::sendConnectRequest(CollaborationPipe& pipe)
 	#ifdef VERBOSE
 	std::cout<<"AgoraClient::sendConnectRequest: Sending "<<messageLength<<" bytes"<<std::endl;
 	#endif
-	pipe.write<unsigned int>(messageLength);
+	pipe.write<Card>(messageLength);
+	
+	/* Write the protocol version number: */
+	pipe.write<Card>(protocolVersion);
+	
+	#if SOUND_CONFIG_HAVE_SPEEX
 	
 	/* Write the SPEEX frame and packet size: */
-	pipe.write<unsigned int>(speexEncoder!=0?speexEncoder->getFrameSize():0);
-	pipe.write<unsigned int>(speexEncoder!=0?speexEncoder->getPacketQueue().getSegmentSize():0);
-	pipe.write<unsigned int>(speexEncoder!=0?speexEncoder->getPacketQueue().getMaxQueueSize():0);
+	pipe.write<Card>(speexEncoder!=0?speexEncoder->getFrameSize():0);
+	pipe.write<Card>(speexEncoder!=0?speexEncoder->getPacketQueue().getSegmentSize():0);
+	pipe.write<Card>(speexEncoder!=0?speexEncoder->getPacketQueue().getMaxQueueSize():0);
+	
+	#else
+	
+	/* Tell the server we don't have audio recording: */
+	pipe.write<Card>(0);
+	pipe.write<Card>(0);
+	pipe.write<Card>(0);
+	
+	#endif
 	
 	#if VIDEO_CONFIG_HAVE_THEORA
 	
 	if(theoraEncoder.isValid())
 		{
 		/* Write the Theora validity flag: */
-		pipe.write<char>(1);
+		pipe.write<Byte>(1);
 		
 		/* From now on, the server expects us to send Theora video stream packets: */
 		hasTheora=true;
 		
 		/* Write the size of the Theora stream headers: */
-		pipe.write<unsigned int>(theoraHeaders.getDataSize());
+		pipe.write<Card>(theoraHeaders.getDataSize());
 		
 		/* Write the Theora stream headers: */
 		theoraHeaders.writeToSink(pipe);
 		
 		/* Write the virtual video image size: */
-		for(int i=0;i<2;++i)
-			pipe.write<Scalar>(videoSize[i]);
+		pipe.write(videoSize,2);
 		}
 	else
 		{
 		/* Write the Theora validity flag: */
-		pipe.write<char>(0);
+		pipe.write<Byte>(0);
 		}
 	
 	#else
 	
 	/* Write the Theora validity flag: */
-	pipe.write<char>(0);
+	pipe.write<Byte>(0);
 	
 	#endif
 	}
 
-void AgoraClient::receiveConnectReply(CollaborationPipe& pipe)
+void AgoraClient::receiveConnectReply(Comm::NetPipe& pipe)
 	{
 	#if VIDEO_CONFIG_HAVE_THEORA
 	
@@ -758,7 +803,7 @@ void AgoraClient::receiveConnectReply(CollaborationPipe& pipe)
 			std::cout<<"AgoraClient::receiveConnectReply: Starting video capture"<<std::endl;
 			#endif
 			videoDevice->allocateFrameBuffers(5);
-			videoDevice->startStreaming(new Misc::VoidMethodCall<const Video::FrameBuffer*,AgoraClient>(this,&AgoraClient::videoCaptureCallback));
+			videoDevice->startStreaming(Misc::createFunctionCall(this,&AgoraClient::videoCaptureCallback));
 			}
 		catch(std::runtime_error err)
 			{
@@ -781,11 +826,13 @@ void AgoraClient::receiveConnectReply(CollaborationPipe& pipe)
 	#endif
 	}
 
-void AgoraClient::receiveConnectReject(CollaborationPipe& pipe)
+void AgoraClient::receiveConnectReject(Comm::NetPipe& pipe)
 	{
 	/* The server has rejected the Agora protocol connection; release all resources: */
+	#if SOUND_CONFIG_HAVE_SPEEX
 	delete speexEncoder;
 	speexEncoder=0;
+	#endif
 	
 	#if VIDEO_CONFIG_HAVE_THEORA
 	
@@ -800,74 +847,14 @@ void AgoraClient::receiveConnectReject(CollaborationPipe& pipe)
 	#endif
 	}
 
-void AgoraClient::sendClientUpdate(CollaborationPipe& pipe)
-	{
-	if(Vrui::isMaster())
-		{
-		if(speexEncoder!=0)
-			{
-			/* Check if there is data in the SPEEX packet buffer: */
-			size_t numSpeexPackets=speexEncoder->getPacketQueue().getQueueSize();
-			
-			if(pauseAudio)
-				{
-				/* Discard all SPEEX packets: */
-				pipe.write<unsigned short>(0);
-				for(size_t i=0;i<numSpeexPackets;++i)
-					speexEncoder->getPacketQueue().popSegment();
-				}
-			else
-				{
-				/* Send all packets from the SPEEX queue: */
-				pipe.write<unsigned short>(numSpeexPackets);
-				for(size_t i=0;i<numSpeexPackets;++i)
-					{
-					const char* speexPacket=speexEncoder->getPacketQueue().popSegment();
-					pipe.write<char>(speexPacket,speexEncoder->getPacketQueue().getSegmentSize());
-					}
-				}
-			
-			/* Send the current head position: */
-			Point headPosition=Point(Vrui::getHeadPosition());
-			pipe.write<Scalar>(headPosition.getComponents(),3);
-			}
-		
-		#if VIDEO_CONFIG_HAVE_THEORA
-		
-		/* Check if the server expects a video capture state update: */
-		if(hasTheora)
-			{
-			/* Check if there is a new video packet in the buffer: */
-			if(theoraEncoder.isValid()&&!pauseVideo&&theoraPacketBuffer.lockNewValue())
-				{
-				/* Send the packet: */
-				pipe.write<char>(1);
-				theoraPacketBuffer.getLockedValue().write(pipe);
-				}
-			else
-				{
-				/* Tell server there is no packet: */
-				pipe.write<char>(0);
-				}
-			
-			/* Send the current virtual video transformation: */
-			OGTransform video=OGTransform(Vrui::getInverseNavigationTransformation());
-			video*=videoTransform;
-			pipe.writeTrackerState(video);
-			}
-		
-		#endif
-		}
-	}
-
-AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationPipe& pipe)
+AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(Comm::NetPipe& pipe)
 	{
 	/* Create a new remote client state object: */
 	RemoteClientState* newClientState=new RemoteClientState;
 	
 	/* Read the remote client's audio encoding state: */
-	newClientState->remoteSpeexFrameSize=pipe.read<unsigned int>();
-	size_t remoteSpeexPacketSize=pipe.read<unsigned int>();
+	newClientState->remoteSpeexFrameSize=pipe.read<Card>();
+	size_t remoteSpeexPacketSize=pipe.read<Card>();
 	newClientState->speexPacketQueue.resize(remoteSpeexPacketSize,jitterBufferSize);
 	if(newClientState->remoteSpeexFrameSize>0)
 		{
@@ -877,7 +864,7 @@ AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationP
 		}
 	
 	/* Read the remote client's video encoding state: */
-	newClientState->hasTheora=pipe.read<char>()!=0;
+	newClientState->hasTheora=pipe.read<Byte>()!=0;
 	if(newClientState->hasTheora)
 		{
 		try
@@ -888,9 +875,10 @@ AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationP
 			#ifdef VERBOSE
 			std::cout<<"AgoraClient::receiveClientConnect: Reading remote client's video stream headers"<<std::endl;
 			#endif
-			unsigned int headerSize=pipe.read<unsigned int>();
-			Misc::ReadBuffer theoraHeaders(headerSize,Misc::ReadBuffer::LittleEndian);
-			theoraHeaders.readFromSource(pipe);
+			unsigned int headerSize=pipe.read<Card>();
+			IO::FixedMemoryFile theoraHeaders(headerSize);
+			theoraHeaders.setEndianness(Misc::LittleEndian);
+			pipe.readRaw(theoraHeaders.getMemory(),headerSize);
 			
 			/* Initialize the Theora decoder by processing all stream header packets: */
 			#ifdef VERBOSE
@@ -932,16 +920,8 @@ AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationP
 			#ifdef VERBOSE
 			std::cout<<"AgoraClient::receiveClientConnect: Skipping remote client's video stream headers"<<std::endl;
 			#endif
-			unsigned int headerSize=pipe.read<unsigned int>();
-			unsigned char buffer[256];
-			while(headerSize>0)
-				{
-				unsigned int readSize=sizeof(buffer);
-				if(readSize>headerSize)
-					readSize=headerSize;
-				pipe.read(buffer,readSize);
-				headerSize-=readSize;
-				}
+			unsigned int headerSize=pipe.read<Card>();
+			pipe.skip<Byte>(headerSize);
 			
 			#endif
 			}
@@ -957,16 +937,17 @@ AgoraClient::RemoteClientState* AgoraClient::receiveClientConnect(CollaborationP
 			}
 		
 		/* Read the remote client's virtual video size: */
-		for(int i=0;i<2;++i)
-			newClientState->videoSize[i]=pipe.read<Scalar>();
+		pipe.read(newClientState->videoSize,2);
 		}
 	
 	/* Return the new client state object: */
 	return newClientState;
 	}
 
-void AgoraClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)
+bool AgoraClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe)
 	{
+	bool result=false;
+	
 	/* Get a handle on the Agora state object: */
 	RemoteClientState* myRcs=dynamic_cast<RemoteClientState*>(rcs);
 	if(myRcs==0)
@@ -975,25 +956,27 @@ void AgoraClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Col
 	if(myRcs->remoteSpeexFrameSize>0)
 		{
 		/* Receive a number of SPEEX audio packets from the server and shove them into the remote client's decoding queue: */
-		size_t numSpeexPackets=pipe.read<unsigned short>();
+		size_t numSpeexPackets=pipe.read<Misc::UInt16>();
 		for(size_t i=0;i<numSpeexPackets;++i)
 			{
 			char* speexPacket=myRcs->speexPacketQueue.getWriteSegment();
-			pipe.read<char>(speexPacket,myRcs->speexPacketQueue.getSegmentSize());
+			pipe.read(speexPacket,myRcs->speexPacketQueue.getSegmentSize());
 			myRcs->speexPacketQueue.pushSegment();
 			}
 		
 		/* Receive the remote client's current head position: */
 		Point& hp=myRcs->headPosition.startNewValue();
-		pipe.read<Scalar>(hp.getComponents(),3);
+		read(hp,pipe);
 		myRcs->headPosition.postNewValue();
+		
+		result=true;
 		}
 	
 	/* Check if the server sent a video state update: */
 	if(myRcs->hasTheora)
 		{
 		/* Check for a new Theora packet from the server: */
-		if(pipe.read<char>()!=0)
+		if(pipe.read<Byte>()!=0)
 			{
 			#if VIDEO_CONFIG_HAVE_THEORA
 			
@@ -1014,7 +997,77 @@ void AgoraClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Col
 			}
 		
 		/* Read a new video transformation from the server: */
-		myRcs->videoTransform.postNewValue(pipe.readTrackerState());
+		OGTransform& vt=myRcs->videoTransform.startNewValue();
+		read(vt,pipe);
+		myRcs->videoTransform.postNewValue();
+		
+		result=true;
+		}
+	
+	return result;
+	}
+
+void AgoraClient::sendClientUpdate(Comm::NetPipe& pipe)
+	{
+	if(Vrui::isMaster())
+		{
+		#if SOUND_CONFIG_HAVE_SPEEX
+		
+		if(speexEncoder!=0)
+			{
+			/* Check if there is data in the SPEEX packet buffer: */
+			size_t numSpeexPackets=speexEncoder->getPacketQueue().getQueueSize();
+			
+			if(pauseAudio)
+				{
+				/* Discard all SPEEX packets: */
+				pipe.write<Misc::UInt16>(0);
+				for(size_t i=0;i<numSpeexPackets;++i)
+					speexEncoder->getPacketQueue().popSegment();
+				}
+			else
+				{
+				/* Send all packets from the SPEEX queue: */
+				pipe.write<Misc::UInt16>(numSpeexPackets);
+				for(size_t i=0;i<numSpeexPackets;++i)
+					{
+					const char* speexPacket=speexEncoder->getPacketQueue().popSegment();
+					pipe.write(speexPacket,speexEncoder->getPacketQueue().getSegmentSize());
+					}
+				}
+			
+			/* Send the current head position: */
+			Point headPosition=Point(Vrui::getHeadPosition());
+			write(headPosition,pipe);
+			}
+		
+		#endif
+		
+		#if VIDEO_CONFIG_HAVE_THEORA
+		
+		/* Check if the server expects a video capture state update: */
+		if(hasTheora)
+			{
+			/* Check if there is a new video packet in the buffer: */
+			if(theoraEncoder.isValid()&&!pauseVideo&&theoraPacketBuffer.lockNewValue())
+				{
+				/* Send the packet: */
+				pipe.write<Byte>(1);
+				theoraPacketBuffer.getLockedValue().write(pipe);
+				}
+			else
+				{
+				/* Tell server there is no packet: */
+				pipe.write<Byte>(0);
+				}
+			
+			/* Send the current virtual video transformation: */
+			OGTransform video=OGTransform(Vrui::getInverseNavigationTransformation());
+			video*=videoTransform;
+			write(video,pipe);
+			}
+		
+		#endif
 		}
 	}
 
@@ -1096,7 +1149,7 @@ void AgoraClient::glRenderAction(const ProtocolClient::RemoteClientState* rcs,GL
 
 void AgoraClient::alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALContextData& contextData) const
 	{
-	#if ALSUPPORT_CONFIG_HAVE_OPENAL
+	#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 	/* Get a handle on the Agora state object: */
 	const RemoteClientState* myRcs=dynamic_cast<const RemoteClientState*>(rcs);
 	if(myRcs==0)

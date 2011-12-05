@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaServer - Server object to implement the Cheria input device
 distribution protocol.
-Copyright (c) 2010 Oliver Kreylos
+Copyright (c) 2010-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,23 +21,23 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef CHERIASERVER_INCLUDED
-#define CHERIASERVER_INCLUDED
+#ifndef COLLABORATION_CHERIASERVER_INCLUDED
+#define COLLABORATION_CHERIASERVER_INCLUDED
 
 #include <Misc/HashTable.h>
-#include <Misc/WriteBuffer.h>
-
+#include <IO/VariableMemoryFile.h>
 #include <Collaboration/ProtocolServer.h>
-#include <Collaboration/CheriaPipe.h>
+#include <Collaboration/CheriaProtocol.h>
 
 namespace Collaboration {
 
-class CheriaServer:public ProtocolServer,public CheriaPipe
+class CheriaServer:public ProtocolServer,private CheriaProtocol
 	{
 	/* Embedded classes: */
 	private:
-	typedef Misc::HashTable<unsigned int,ServerDeviceState*> ClientDeviceMap; // Map from client device IDs to server device states
-	typedef Misc::HashTable<unsigned int,ServerToolState*> ClientToolMap; // Map from client tool IDs to server tools
+	typedef Misc::HashTable<unsigned int,DeviceState*> ClientDeviceMap; // Map from client device IDs to device states
+	typedef Misc::HashTable<unsigned int,ToolState*> ClientToolMap; // Map from client tool IDs to tool states
+	typedef IO::VariableMemoryFile MessageBuffer; // Buffer to hold outgoing messages from a client between two updates
 	
 	class ClientState:public ProtocolServer::ClientState
 		{
@@ -47,7 +47,7 @@ class CheriaServer:public ProtocolServer,public CheriaPipe
 		private:
 		ClientDeviceMap clientDevices; // Map of devices managed by the client
 		ClientToolMap clientTools; // Map of tools managed by the client
-		Misc::WriteBuffer messageBuffer; // Buffer for outgoing messages from this client
+		MessageBuffer messageBuffer; // Buffer for outgoing messages from this client
 		
 		/* Constructors and destructors: */
 		ClientState(void);
@@ -62,11 +62,11 @@ class CheriaServer:public ProtocolServer,public CheriaPipe
 	/* Methods from ProtocolServer: */
 	virtual const char* getName(void) const;
 	virtual unsigned int getNumMessages(void) const;
-	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe);
-	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
-	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe);
+	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe);
+	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe);
 	virtual void beforeServerUpdate(ProtocolServer::ClientState* cs);
-	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe);
 	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
 	};
 

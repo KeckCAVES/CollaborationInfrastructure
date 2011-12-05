@@ -1,6 +1,6 @@
 /***********************************************************************
 Main program for a dedicated VR collaboration server.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -24,6 +24,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <stdlib.h>
 #include <signal.h>
 #include <iostream>
+#include <Misc/SelfDestructPointer.h>
 #include <Misc/Time.h>
 
 #include <Collaboration/CollaborationServer.h>
@@ -37,63 +38,76 @@ void termSignalHandler(int)
 
 int main(int argc,char* argv[])
 	{
-	/* Create a new configuration object: */
-	Collaboration::CollaborationServer::Configuration* cfg=new Collaboration::CollaborationServer::Configuration;
-	
-	/* Parse the command line: */
-	Misc::Time tickTime(cfg->getTickTime()); // Server update time interval in seconds
-	for(int i=1;i<argc;++i)
+	try
 		{
-		if(argv[i][0]=='-')
+		/* Create a new configuration object: */
+		Misc::SelfDestructPointer<Collaboration::CollaborationServer::Configuration> cfg(new Collaboration::CollaborationServer::Configuration);
+		
+		/* Parse the command line: */
+		Misc::Time tickTime(cfg->getTickTime()); // Server update time interval in seconds
+		for(int i=1;i<argc;++i)
 			{
-			if(strcasecmp(argv[i]+1,"port")==0)
+			if(argv[i][0]=='-')
 				{
-				++i;
-				if(i<argc)
+				if(strcasecmp(argv[i]+1,"port")==0)
 					{
-					/* Override the listen port ID in the configuration file section: */
-					cfg->setListenPortId(atoi(argv[i]));
+					++i;
+					if(i<argc)
+						{
+						/* Override the listen port ID in the configuration file section: */
+						cfg->setListenPortId(atoi(argv[i]));
+						}
+					else
+						std::cerr<<"CollaborationServerMain: ignored dangling -port option"<<std::endl;
 					}
-				else
-					std::cerr<<"CollaborationServerMain: ignored dangling -port option"<<std::endl;
-				}
-			else if(strcasecmp(argv[i]+1,"tick")==0)
-				{
-				++i;
-				if(i<argc)
-					tickTime=Misc::Time(atof(argv[i]));
-				else
-					std::cerr<<"CollaborationServerMain: ignored dangling -tick option"<<std::endl;
+				else if(strcasecmp(argv[i]+1,"tick")==0)
+					{
+					++i;
+					if(i<argc)
+						tickTime=Misc::Time(atof(argv[i]));
+					else
+						std::cerr<<"CollaborationServerMain: ignored dangling -tick option"<<std::endl;
+					}
 				}
 			}
-		}
-	
-	/* Ignore SIGPIPE and leave handling of pipe errors to TCP sockets: */
-	struct sigaction sigPipeAction;
-	sigPipeAction.sa_handler=SIG_IGN;
-	sigemptyset(&sigPipeAction.sa_mask);
-	sigPipeAction.sa_flags=0x0;
-	sigaction(SIGPIPE,&sigPipeAction,0);
-	
-	/* Create the collaboration server object: */
-	Collaboration::CollaborationServer server(cfg);
-	std::cout<<"CollaborationServerMain: Started server on port "<<server.getListenPortId()<<std::endl;
-	
-	/* Reroute SIG_INT signals to cleanly shut down multiplexer: */
-	struct sigaction sigIntAction;
-	memset(&sigIntAction,0,sizeof(struct sigaction));
-	sigIntAction.sa_handler=termSignalHandler;
-	if(sigaction(SIGINT,&sigIntAction,0)!=0)
-		std::cerr<<"CollaborationServerMain: Cannot intercept SIG_INT signals. Server won't shut down cleanly."<<std::endl;
-	
-	/* Run the server loop at the specified time interval: */
-	while(runServerLoop)
-		{
-		/* Sleep for the tick time: */
-		Misc::sleep(tickTime);
 		
-		/* Update the server state: */
-		server.update();
+		/* Ignore SIGPIPE and leave handling of pipe errors to TCP sockets: */
+		struct sigaction sigPipeAction;
+		sigPipeAction.sa_handler=SIG_IGN;
+		sigemptyset(&sigPipeAction.sa_mask);
+		sigPipeAction.sa_flags=0x0;
+		sigaction(SIGPIPE,&sigPipeAction,0);
+		
+		/* Create the collaboration server object: */
+		Collaboration::CollaborationServer server(cfg.getTarget());
+		cfg.releaseTarget();
+		std::cout<<"CollaborationServerMain: Started server on port "<<server.getListenPortId()<<std::endl;
+		
+		/* Reroute SIG_INT signals to cleanly shut down multiplexer: */
+		struct sigaction sigIntAction;
+		memset(&sigIntAction,0,sizeof(struct sigaction));
+		sigIntAction.sa_handler=termSignalHandler;
+		if(sigaction(SIGINT,&sigIntAction,0)!=0)
+			std::cerr<<"CollaborationServerMain: Cannot intercept SIG_INT signals. Server won't shut down cleanly."<<std::endl;
+		
+		/* Run the server loop at the specified time interval: */
+		Misc::Time nextTick=Misc::Time::now();
+		while(runServerLoop)
+			{
+			/* Sleep for the tick time: */
+			nextTick+=tickTime;
+			Misc::Time sleepTime=nextTick-Misc::Time::now();
+			if(sleepTime.tv_sec>=0)
+				Misc::sleep(sleepTime);
+			
+			/* Update the server state: */
+			server.update();
+			}
+		}
+	catch(std::runtime_error err)
+		{
+		std::cerr<<"Caught exception "<<err.what()<<std::endl;
+		return 1;
 		}
 	
 	return 0;

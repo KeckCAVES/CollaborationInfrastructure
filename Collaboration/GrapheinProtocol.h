@@ -1,7 +1,7 @@
 /***********************************************************************
-GrapheinPipe - Common interface between a Graphein server and a Graphein
-client.
-Copyright (c) 2009 Oliver Kreylos
+GrapheinProtocol - Class defining the communication protocol between a
+Graphein server and a Graphein client.
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,21 +21,22 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef GRAPHEINPIPE_INCLUDED
-#define GRAPHEINPIPE_INCLUDED
+#ifndef COLLABORATION_GRAPHEINPROTOCOL_INCLUDED
+#define COLLABORATION_GRAPHEINPROTOCOL_INCLUDED
 
+#include <string>
 #include <vector>
 #include <Misc/HashTable.h>
 #include <GL/gl.h>
 #include <GL/GLColor.h>
-#include <Collaboration/CollaborationPipe.h>
+#include <Collaboration/Protocol.h>
 
 namespace Collaboration {
 
-struct GrapheinPipe
+class GrapheinProtocol:public Protocol
 	{
 	/* Embedded classes: */
-	protected:
+	public:
 	enum MessageId // Enumerated type for Graphein protocol messages
 		{
 		ADD_CURVE=0,
@@ -45,9 +46,6 @@ struct GrapheinPipe
 		UPDATE_END,
 		MESSAGES_END
 		};
-	
-	typedef CollaborationPipe::Scalar Scalar; // Scalar type for geometry data
-	typedef CollaborationPipe::Point Point; // Point type
 	
 	struct Curve // Structure to represent single-stroke curves
 		{
@@ -59,42 +57,17 @@ struct GrapheinPipe
 		GLfloat lineWidth; // The curve's cosmetic line width
 		Color color; // The curve's color
 		std::vector<Point> vertices; // The curve's vertices
-		};
-	
-	typedef Misc::HashTable<unsigned int,Curve*> CurveHasher; // Hash table to map curve ID to curve objects
-	
-	struct CurveAction // Structure to retain changes to a client's state between update packets
-		{
-		/* Elements: */
-		public:
-		CollaborationPipe::MessageIdType action; // Kind of action; taken from protocol message IDs
-		CurveHasher::Iterator curveIt; // Iterator to the affected curve in the curve hash table
-		Point newVertex; // New curve vertex for APPEND_POINT actions
 		
-		/* Constructors and destructors: */
-		CurveAction(CollaborationPipe::MessageIdType sAction)
-			:action(sAction)
-			{
-			}
-		CurveAction(CollaborationPipe::MessageIdType sAction,const CurveHasher::Iterator& sCurveIt)
-			:action(sAction),curveIt(sCurveIt)
-			{
-			}
-		CurveAction(CollaborationPipe::MessageIdType sAction,const CurveHasher::Iterator& sCurveIt,const Point& sNewVertex)
-			:action(sAction),curveIt(sCurveIt),newVertex(sNewVertex)
-			{
-			}
+		/* Methods: */
+		void read(IO::File& source); // Reads a curve from the given source
+		void write(IO::File& sink) const; // Writes a curve to the given sink
 		};
 	
-	typedef std::vector<CurveAction> CurveActionList; // Type for lists of curve actions
+	typedef Misc::HashTable<unsigned int,Curve*> CurveMap; // Hash table to map curve IDs to curve objects
 	
 	/* Elements: */
 	static const char* protocolName; // Network name of Graphein protocol
 	static const unsigned int protocolVersion; // Specific version of protocol implementation
-	
-	/* Methods: */
-	void writeCurve(CollaborationPipe& pipe,const Curve& curve); // Sends a curve to the pipe
-	Curve& readCurve(CollaborationPipe& pipe,Curve& curve); // Receives a curve from the pipe
 	};
 
 }

@@ -3,7 +3,7 @@ ProtocolClient - Abstract base class for the client-side components of
 collaboration protocols that can be added to the base protocol
 implemented by CollaborationClient and CollaborationServer, to simplify
 creating complex higher-level protocols.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -25,7 +25,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/ProtocolClient.h>
 
-#include <Collaboration/CollaborationPipe.h>
+#include <Comm/NetPipe.h>
+#include <Collaboration/Protocol.h>
 
 namespace Collaboration {
 
@@ -46,7 +47,7 @@ Methods of class ProtocolClient:
 *******************************/
 
 ProtocolClient::ProtocolClient(void)
-	:messageIdBase(0)
+	:client(0),messageIdBase(0)
 	{
 	}
 
@@ -60,8 +61,10 @@ unsigned int ProtocolClient::getNumMessages(void) const
 	return 0;
 	}
 
-void ProtocolClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+void ProtocolClient::initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection)
 	{
+	/* Remember the client object: */
+	client=sClient;
 	}
 
 bool ProtocolClient::haveSettingsDialog(void) const
@@ -75,57 +78,49 @@ void ProtocolClient::buildSettingsDialog(GLMotif::RowColumn* settingsDialog)
 	/* Default behavior is to do nothing */
 	}
 
-void ProtocolClient::sendConnectRequest(CollaborationPipe& pipe)
+void ProtocolClient::sendConnectRequest(Comm::NetPipe& pipe)
 	{
 	/* Must send a zero to indicate an empty protocol message: */
-	pipe.write<unsigned int>(0);
+	pipe.write<Protocol::Card>(0);
 	}
 
-void ProtocolClient::receiveConnectReply(CollaborationPipe& pipe)
+void ProtocolClient::receiveConnectReply(Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolClient::receiveConnectReject(CollaborationPipe& pipe)
+void ProtocolClient::receiveConnectReject(Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolClient::sendDisconnectRequest(CollaborationPipe& pipe)
+void ProtocolClient::sendDisconnectRequest(Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolClient::receiveDisconnectReply(CollaborationPipe& pipe)
+void ProtocolClient::receiveDisconnectReply(Comm::NetPipe& pipe)
 	{
 	}
 
-void ProtocolClient::sendClientUpdate(CollaborationPipe& pipe)
+void ProtocolClient::sendClientUpdate(Comm::NetPipe& pipe)
 	{
 	}
 
-ProtocolClient::RemoteClientState* ProtocolClient::receiveClientConnect(CollaborationPipe& pipe)
+ProtocolClient::RemoteClientState* ProtocolClient::receiveClientConnect(Comm::NetPipe& pipe)
 	{
 	/* Return a dummy object: */
 	return new RemoteClientState;
 	}
 
-void ProtocolClient::receiveServerUpdate(CollaborationPipe& pipe)
+bool ProtocolClient::receiveServerUpdate(Comm::NetPipe& pipe)
 	{
-	}
-
-void ProtocolClient::receiveServerUpdate(RemoteClientState* rcs,CollaborationPipe& pipe)
-	{
-	}
-
-void ProtocolClient::rejectedByServer(void)
-	{
-	}
-
-bool ProtocolClient::handleMessage(unsigned int messageId,CollaborationPipe& pipe)
-	{
-	/* Default is to reject all messages: */
 	return false;
 	}
 
-void ProtocolClient::beforeClientUpdate(CollaborationPipe& pipe)
+bool ProtocolClient::receiveServerUpdate(RemoteClientState* rcs,Comm::NetPipe& pipe)
+	{
+	return false;
+	}
+
+void ProtocolClient::rejectedByServer(void)
 	{
 	}
 
@@ -159,6 +154,16 @@ void ProtocolClient::alRenderAction(ALContextData& contextData) const
 
 void ProtocolClient::alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALContextData& contextData) const
 	{
+	}
+
+void ProtocolClient::beforeClientUpdate(Comm::NetPipe& pipe)
+	{
+	}
+
+bool ProtocolClient::handleMessage(unsigned int messageId,Comm::NetPipe& pipe)
+	{
+	/* Default is to reject all messages: */
+	return false;
 	}
 
 }

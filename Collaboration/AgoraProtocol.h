@@ -1,7 +1,7 @@
 /***********************************************************************
-AgoraPipe - Common interface between an Agora server and an Agora
-client.
-Copyright (c) 2009-2010 Oliver Kreylos
+AgoraProtocol - Class defining the communication protocol between an
+Agora server and an Agora client.
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,32 +21,26 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef AGORAPIPE_INCLUDED
-#define AGORAPIPE_INCLUDED
+#ifndef COLLABORATION_AGORAPROTOCOL_INCLUDED
+#define COLLABORATION_AGORAPROTOCOL_INCLUDED
 
-#include <Misc/SizedTypes.h>
-
-#include <Collaboration/CollaborationPipe.h>
+#include <Collaboration/Protocol.h>
 
 namespace Collaboration {
 
-struct AgoraPipe
+class AgoraProtocol:public Protocol
 	{
 	/* Embedded classes: */
-	protected:
-	typedef CollaborationPipe::Scalar Scalar; // Scalar type in virtual video space
-	typedef CollaborationPipe::Point Point; // Point type in virtual video space
-	typedef CollaborationPipe::OGTransform OGTransform; // Orthogonal transformation in virtual video space
-	
+	public:
 	class VideoPacket // Helper class to store and transmit encoded video packets
 		{
 		/* Elements: */
 		private:
-		char bos; // Beginning-of-stream flag
+		Misc::SInt8 bos; // Beginning-of-stream flag
 		Misc::SInt64 granulePos; // Index of most recent keyframe
 		Misc::SInt64 packetNo; // Packet sequence number in video stream
 		size_t allocSize; // Size of allocated packet buffer
-		unsigned char* data; // Packet data buffer
+		Misc::UInt8* data; // Packet data buffer
 		size_t dataSize; // Amount of data in the packet
 		
 		/* Constructors and destructors: */
@@ -66,45 +60,45 @@ struct AgoraPipe
 			}
 		
 		/* Methods: */
-		void read(Collaboration::CollaborationPipe& pipe) // Reads the packet from a pipe
+		void read(IO::File& source) // Reads the packet from a source
 			{
 			/* Read the packet header: */
-			bos=pipe.read<char>();
-			granulePos=pipe.read<Misc::SInt64>();
-			packetNo=pipe.read<Misc::SInt64>();
+			bos=source.read<Misc::SInt8>();
+			granulePos=source.read<Misc::SInt64>();
+			packetNo=source.read<Misc::SInt64>();
 			
 			/* Read the data size: */
-			dataSize=pipe.read<unsigned int>();
+			dataSize=source.read<Card>();
 			
 			/* Reallocate the data buffer if necessary: */
 			if(allocSize<dataSize)
 				{
 				delete[] data;
 				allocSize=dataSize;
-				data=new unsigned char[allocSize];
+				data=new Misc::UInt8[allocSize];
 				}
 			
 			/* Read the packet data: */
-			pipe.read(data,dataSize);
+			source.read(data,dataSize);
 			}
-		void write(Collaboration::CollaborationPipe& pipe) const // Writes the packet to a pipe
+		void write(IO::File& sink) const // Writes the packet to a sink
 			{
 			/* Write the packet header: */
-			pipe.write<char>(bos);
-			pipe.write<Misc::SInt64>(granulePos);
-			pipe.write<Misc::SInt64>(packetNo);
+			sink.write<Misc::SInt8>(bos);
+			sink.write<Misc::SInt64>(granulePos);
+			sink.write<Misc::SInt64>(packetNo);
 			
 			/* Write the data size: */
-			pipe.write<unsigned int>((unsigned int)(dataSize));
+			sink.write<Card>(Card(dataSize));
 			
 			/* Write the packet data: */
-			pipe.write(data,dataSize);
+			sink.write(data,dataSize);
 			}
 		};
 	
 	/* Elements: */
 	static const char* protocolName; // Network name of Agora protocol
-	static const unsigned int numProtocolMessages; // Number of Agora-specific protocol messages
+	static const unsigned int protocolVersion; // Specific version of protocol implementation
 	};
 
 }

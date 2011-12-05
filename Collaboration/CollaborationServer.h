@@ -2,7 +2,7 @@
 CollaborationServer - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -22,8 +22,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef COLLABORATIONSERVER_INCLUDED
-#define COLLABORATIONSERVER_INCLUDED
+#ifndef COLLABORATION_COLLABORATIONSERVER_INCLUDED
+#define COLLABORATION_COLLABORATIONSERVER_INCLUDED
 
 #include <utility>
 #include <string>
@@ -32,15 +32,15 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Plugins/ObjectLoader.h>
 #include <Threads/Thread.h>
 #include <Threads/Mutex.h>
-#include <Comm/TCPSocket.h>
+#include <Comm/ListeningTCPSocket.h>
+#include <Comm/NetPipe.h>
 #include <Vrui/Geometry.h>
-
-#include <Collaboration/CollaborationPipe.h>
 #include <Collaboration/ProtocolServer.h>
+#include <Collaboration/CollaborationProtocol.h>
 
 namespace Collaboration {
 
-class CollaborationServer
+class CollaborationServer:private CollaborationProtocol
 	{
 	/* Embedded classes: */
 	public:
@@ -96,23 +96,24 @@ class CollaborationServer
 		
 		/* Elements: */
 		public:
-		Threads::Mutex mutex; // Mutex protection the client connection state structure
+		Threads::Mutex mutex; // Mutex protecting the client connection state structure
 		unsigned int clientID; // Server-wide unique client ID
-		CollaborationPipe pipe; // Communication pipe connecting to the client
+		Threads::Mutex pipeMutex; // Mutex protecting the client communication pipe
+		Comm::NetPipePtr pipe; // Communication pipe connecting to the client
 		std::string clientHostname; // Hostname of connected client
 		int clientPortId; // Port ID of connected client
-		std::string name; // Display name of this client
 		ClientProtocolList protocols; // List of protocol plug-ins negotiated with this client sorted in order of ascending index
 		Threads::Thread communicationThread; // Thread receiving messages from the connected client
-		CollaborationPipe::ClientState state; // Transient client state
+		ClientState state; // Transient client state
+		unsigned int stateUpdateMask; // Update mask for the transient client state
 		
 		/* Constructors and destructors: */
-		ClientConnection(unsigned int sClientID,const Comm::TCPSocket& socket);
+		ClientConnection(unsigned int sClientID,Comm::NetPipePtr sPipe);
 		~ClientConnection(void);
 		
 		/* Methods: */
 		bool negotiateProtocols(CollaborationServer& server); // Finds the common subset of protocol plug-ins registered on the client and server; returns false if any protocol rejects the client
-		void sendClientConnectProtocols(ClientConnection* dest,CollaborationPipe& pipe); // Lets all protocol plug-ins shared by the two clients write their CLIENT_CONNECT message payloads
+		void sendClientConnectProtocols(ClientConnection* dest,Comm::NetPipe& destPipe); // Lets all protocol plug-ins shared by the two clients write their CLIENT_CONNECT message payloads
 		};
 	
 	typedef std::vector<ClientConnection*> ClientList; // Type for lists of client connection state structures
@@ -144,7 +145,7 @@ class CollaborationServer
 	private:
 	Configuration* configuration; // Pointer to the server's configuration object
 	ProtocolServerLoader protocolLoader; // Object loader to dynamically load protocol plug-ins requested by clients
-	Comm::TCPSocket listenSocket; // Socket receiving connection requests from clients
+	Comm::ListeningTCPSocket listenSocket; // Socket receiving connection requests from clients
 	Threads::Thread listenThread; // Thread receiving connection request messages
 	Threads::Mutex protocolListMutex; // Mutex protecting the protocol list
 	ProtocolList protocols; // List of protocols currently registered with the server
@@ -178,21 +179,21 @@ class CollaborationServer
 	*********************************************************************/
 	
 	/* Hooks to add payloads to lower-level protocol messages: */
-	virtual bool receiveConnectRequest(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server receives a client's connection request; serrver rejects the request if the method returns false
-	virtual void sendConnectReply(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server replies to a client's connection request
-	virtual void sendConnectReject(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server denies a client's connection request
-	virtual void receiveDisconnectRequest(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server receives a disconnection request
-	virtual void sendDisconnectReply(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server sends a disconnect reply to a client
-	virtual void receiveClientUpdate(unsigned int clientID,CollaborationPipe& pipe); // Hook called when the server receives a client's state update packet
-	virtual void sendClientConnect(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a connection message for client sourceClient to client destClient
-	virtual void sendServerUpdate(unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a state update to a client
-	virtual void sendServerUpdate(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe); // Hook called when the server sends a state update for client sourceClient to client destClient
+	virtual bool receiveConnectRequest(unsigned int clientID,Comm::NetPipe& pipe); // Hook called when the server receives a client's connection request; serrver rejects the request if the method returns false
+	virtual void sendConnectReply(unsigned int clientID,Comm::NetPipe& pipe); // Hook called when the server replies to a client's connection request
+	virtual void sendConnectReject(unsigned int clientID,Comm::NetPipe& pipe); // Hook called when the server denies a client's connection request
+	virtual void receiveDisconnectRequest(unsigned int clientID,Comm::NetPipe& pipe); // Hook called when the server receives a disconnection request
+	virtual void sendDisconnectReply(unsigned int clientID,Comm::NetPipe& pipe); // Hook called when the server sends a disconnect reply to a client
+	virtual void receiveClientUpdate(unsigned int clientID,Comm::NetPipe& pipe); // Hook called when the server receives a client's state update packet
+	virtual void sendClientConnect(unsigned int sourceClientID,unsigned int destClientID,Comm::NetPipe& pipe); // Hook called when the server sends a connection message for client sourceClient to client destClient
+	virtual void sendServerUpdate(unsigned int destClientID,Comm::NetPipe& pipe); // Hook called when the server sends a state update to a client
+	virtual void sendServerUpdate(unsigned int sourceClientID,unsigned int destClientID,Comm::NetPipe& pipe); // Hook called when the server sends a state update for client sourceClient to client destClient
 	
 	/* Hooks to insert processing into the lower-level protocol state machine: */
-	virtual bool handleMessage(unsigned int clientID,CollaborationPipe& pipe,CollaborationPipe::MessageIdType messageId); // Hook called when server receives unknown message from client; returns false to signal protocol error
+	virtual bool handleMessage(unsigned int clientID,Comm::NetPipe& pipe,Protocol::MessageIdType messageId); // Hook called when server receives unknown message from client; returns false to signal protocol error
 	virtual void connectClient(unsigned int clientID); // Hook called when connection to a new client has been fully established
 	virtual void disconnectClient(unsigned int clientID); // Hook called after a client has been disconnected (voluntarily or involuntarily)
-	virtual void beforeServerUpdate(unsigned int clientID,CollaborationPipe& pipe); // Hook called right before the server sends a state update message to the given client
+	virtual void beforeServerUpdate(unsigned int clientID,Comm::NetPipe& pipe); // Hook called right before the server sends a state update message to the given client
 	};
 
 }

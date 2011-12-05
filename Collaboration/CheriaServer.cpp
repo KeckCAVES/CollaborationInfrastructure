@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaServer - Server object to implement the Cheria input device
 distribution protocol.
-Copyright (c) 2010 Oliver Kreylos
+Copyright (c) 2010-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,7 +21,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#define DEBUGGING 1
+#define DEBUGGING 0
 
 #include <Collaboration/CheriaServer.h>
 
@@ -29,6 +29,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #endif
 #include <Misc/ThrowStdErr.h>
+#include <Comm/NetPipe.h>
 
 namespace Collaboration {
 
@@ -43,11 +44,11 @@ CheriaServer::ClientState::ClientState(void)
 
 CheriaServer::ClientState::~ClientState(void)
 	{
-	/* Delete all server device states: */
+	/* Delete all device states: */
 	for(ClientDeviceMap::Iterator cdIt=clientDevices.begin();!cdIt.isFinished();++cdIt)
 		delete cdIt->getDest();
 	
-	/* Delete all server tool states: */
+	/* Delete all tool states: */
 	for(ClientToolMap::Iterator ctIt=clientTools.begin();!ctIt.isFinished();++ctIt)
 		delete ctIt->getDest();
 	}
@@ -74,24 +75,28 @@ unsigned int CheriaServer::getNumMessages(void) const
 	return MESSAGES_END;
 	}
 
-ProtocolServer::ClientState* CheriaServer::receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe)
+ProtocolServer::ClientState* CheriaServer::receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe)
 	{
+	#if DEBUGGING
+	std::cout<<"CheriaServer::receiveConnectRequest"<<std::endl<<std::flush;
+	#endif
+	
 	/* Check the protocol message length: */
-	if(protocolMessageLength!=sizeof(unsigned int))
+	if(protocolMessageLength!=sizeof(Card))
 		{
 		/* Fatal error; stop communicating with client entirely: */
-		Misc::throwStdErr("CheriaServer::receiveConnectRequest: Protocol error; received %u bytes instead of %u",(unsigned int)protocolMessageLength,(unsigned int)sizeof(unsigned int));
+		Misc::throwStdErr("CheriaServer::receiveConnectRequest: Protocol error; received %u bytes instead of %u",protocolMessageLength,(unsigned int)sizeof(Card));
 		}
 	
 	/* Read the client's protocol version: */
-	unsigned int clientProtocolVersion=pipe.read<unsigned int>();
+	unsigned int clientProtocolVersion=pipe.read<Card>();
 	
 	/* Check for the correct version number: */
 	if(clientProtocolVersion==protocolVersion)
 		{
 		/* Create the new client state object and set its message buffer's endianness: */
 		ClientState* result=new ClientState;
-		result->messageBuffer.setEndianness(pipe.mustSwapOnWrite());
+		result->messageBuffer.setSwapOnWrite(pipe.mustSwapOnWrite());
 		
 		return result;
 		}
@@ -99,7 +104,7 @@ ProtocolServer::ClientState* CheriaServer::receiveConnectRequest(unsigned int pr
 		return 0;
 	}
 
-void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the Cheria state object: */
 	ClientState* myCs=dynamic_cast<ClientState*>(cs);
@@ -110,30 +115,32 @@ void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 	bool goOn=true;
 	while(goOn)
 		{
-		/* Read the next message: */
-		MessageIdType message=pipe.readMessage();
-		
-		switch(message)
+		/* Read and handle the next message: */
+		switch(readMessage(pipe))
 			{
 			case CREATE_DEVICE:
 				{
 				/* Read the new device's ID: */
-				unsigned int newDeviceId=pipe.read<unsigned int>();
+				unsigned int newDeviceId=pipe.read<Card>();
 				
 				#if DEBUGGING
-				std::cout<<"CREATE_DEVICE "<<newDeviceId<<std::endl;
+				std::cout<<"CREATE_DEVICE "<<newDeviceId<<"..."<<std::flush;
 				#endif
 				
 				/* Create the new device: */
-				ServerDeviceState* newDevice=new ServerDeviceState(pipe);
+				DeviceState* newDevice=new DeviceState(pipe);
 				
 				/* Store the new device in the client's device map: */
-				myCs->clientDevices.setEntry(ClientDeviceMap::Entry(newDeviceId,newDevice));
+				myCs->clientDevices[newDeviceId]=newDevice;
 				
 				/* Append a creation message to the client's outgoing buffer: */
-				myCs->messageBuffer.write<MessageIdType>(CREATE_DEVICE);
-				myCs->messageBuffer.write<unsigned int>(newDeviceId);
+				writeMessage(CREATE_DEVICE,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(newDeviceId);
 				newDevice->writeLayout(myCs->messageBuffer);
+				
+				#if DEBUGGING
+				std::cout<<" "<<newDevice->numButtons<<", "<<newDevice->numValuators<<std::endl<<std::flush;
+				#endif
 				
 				break;
 				}
@@ -141,7 +148,7 @@ void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 			case DESTROY_DEVICE:
 				{
 				/* Read the device's ID: */
-				unsigned int deviceId=pipe.read<unsigned int>();
+				unsigned int deviceId=pipe.read<Card>();
 				
 				#if DEBUGGING
 				std::cout<<"DESTROY_DEVICE "<<deviceId<<std::endl;
@@ -157,8 +164,8 @@ void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 					}
 				
 				/* Append the message to the client's outgoing buffer: */
-				myCs->messageBuffer.write<MessageIdType>(DESTROY_DEVICE);
-				myCs->messageBuffer.write<unsigned int>(deviceId);
+				writeMessage(DESTROY_DEVICE,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(deviceId);
 				
 				break;
 				}
@@ -166,22 +173,26 @@ void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 			case CREATE_TOOL:
 				{
 				/* Read the new tool's ID: */
-				unsigned int newToolId=pipe.read<unsigned int>();
+				unsigned int newToolId=pipe.read<Card>();
 				
 				#if DEBUGGING
-				std::cout<<"CREATE_TOOL "<<newToolId<<std::endl;
+				std::cout<<"CREATE_TOOL "<<newToolId<<"..."<<std::flush;
 				#endif
 				
 				/* Create the new tool: */
-				ServerToolState* newTool=new ServerToolState(pipe);
+				ToolState* newTool=new ToolState(pipe);
 				
 				/* Store the new tool in the client's tool map: */
-				myCs->clientTools.setEntry(ClientToolMap::Entry(newToolId,newTool));
+				myCs->clientTools[newToolId]=newTool;
 				
 				/* Append the message to the client's outgoing buffer: */
-				myCs->messageBuffer.write<MessageIdType>(CREATE_TOOL);
-				myCs->messageBuffer.write<unsigned int>(newToolId);
-				newTool->writeLayout(myCs->messageBuffer);
+				writeMessage(CREATE_TOOL,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(newToolId);
+				newTool->write(myCs->messageBuffer);
+				
+				#if DEBUGGING
+				std::cout<<" "<<newTool->numButtonSlots<<", "<<newTool->numValuatorSlots<<std::endl<<std::flush;
+				#endif
 				
 				break;
 				}
@@ -189,7 +200,7 @@ void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 			case DESTROY_TOOL:
 				{
 				/* Read the tool's ID: */
-				unsigned int toolId=pipe.read<unsigned int>();
+				unsigned int toolId=pipe.read<Card>();
 				
 				#if DEBUGGING
 				std::cout<<"DESTROY_TOOL "<<toolId<<std::endl;
@@ -205,32 +216,34 @@ void CheriaServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabora
 					}
 				
 				/* Append the message to the client's outgoing buffer: */
-				myCs->messageBuffer.write<MessageIdType>(DESTROY_TOOL);
-				myCs->messageBuffer.write<unsigned int>(toolId);
+				writeMessage(DESTROY_TOOL,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(toolId);
 				
 				break;
 				}
 			
 			case DEVICE_STATES:
 				{
-				/* Read device states for all devices currently managed by the client: */
-				for(size_t i=0;i<myCs->clientDevices.getNumEntries();++i)
+				/* Read all contained status messages: */
+				unsigned int deviceId;
+				while((deviceId=pipe.read<Card>())!=0)
 					{
-					unsigned int deviceId=pipe.read<unsigned int>();
-					
-					ServerDeviceState* device=myCs->clientDevices.getEntry(deviceId).getDest();
-					device->read(pipe);
+					/* Update the device state: */
+					myCs->clientDevices.getEntry(deviceId).getDest()->read(pipe);
 					}
 				
 				/* This is the last message: */
 				goOn=false;
 				break;
 				}
+			
+			default:
+				Misc::throwStdErr("CheriaServer::receiveClientUpdate: received unknown message");
 			}
 		}
 	}
 
-void CheriaServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void CheriaServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	/* Get handles on the Cheria state objects: */
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
@@ -238,51 +251,54 @@ void CheriaServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Proto
 	if(mySourceCs==0||myDestCs==0)
 		Misc::throwStdErr("CheriaServer::sendClientConnect: Client state object has mismatching type");
 	
+	#if DEBUGGING
+	std::cout<<"CheriaServer::sendClientConnect..."<<std::flush;
+	#endif
+	
 	/* Create a temporary message buffer with the same endianness as the pipe's write end: */
-	Misc::WriteBuffer buffer(pipe.mustSwapOnWrite());
+	MessageBuffer buffer;
+	buffer.setSwapOnWrite(pipe.mustSwapOnWrite());
 	
 	/*********************************************************************
 	Assemble the update message in the temporary buffer:
 	*********************************************************************/
 	
-	/* Send creation messages for the source client's "old" devices to the destination client: */
+	/* Send creation messages for the source client's devices to the destination client: */
 	for(ClientDeviceMap::Iterator cdIt=mySourceCs->clientDevices.begin();!cdIt.isFinished();++cdIt)
-		if(!cdIt->getDest()->newDevice)
-			{
-			buffer.write<MessageIdType>(CREATE_DEVICE);
-			buffer.write<unsigned int>(cdIt->getSource());
-			cdIt->getDest()->writeLayout(buffer);
-			}
+		{
+		writeMessage(CREATE_DEVICE,buffer);
+		buffer.write<Card>(cdIt->getSource());
+		cdIt->getDest()->writeLayout(buffer);
+		}
 	
-	/* Send creation messages for the source client's "old" tools to the destination client: */
+	/* Send creation messages for the source client's tools to the destination client: */
 	for(ClientToolMap::Iterator ctIt=mySourceCs->clientTools.begin();!ctIt.isFinished();++ctIt)
-		if(!ctIt->getDest()->newTool)
-			{
-			buffer.write<MessageIdType>(CREATE_TOOL);
-			buffer.write<unsigned int>(ctIt->getSource());
-			ctIt->getDest()->writeLayout(buffer);
-			}
+		{
+		writeMessage(CREATE_TOOL,buffer);
+		buffer.write<Card>(ctIt->getSource());
+		ctIt->getDest()->write(buffer);
+		}
 	
-	/* Send the current states of the source client's "old" managed input devices: */
-	buffer.write<MessageIdType>(DEVICE_STATES);
+	/* Send the current states of the source client's devices: */
+	writeMessage(DEVICE_STATES,buffer);
 	for(ClientDeviceMap::Iterator cdIt=mySourceCs->clientDevices.begin();!cdIt.isFinished();++cdIt)
-		if(!cdIt->getDest()->newDevice)
-			{
-			/* Send a device state message: */
-			buffer.write<unsigned int>(cdIt->getSource());
-			cdIt->getDest()->write(buffer);
-			}
+		{
+		/* Send a device state message: */
+		buffer.write<Card>(cdIt->getSource());
+		cdIt->getDest()->write(DeviceState::FULL_UPDATE,buffer);
+		}
+	buffer.write<Card>(0);
 	
 	/*********************************************************************
 	Send the assembled message to the client in one go:
 	*********************************************************************/
 	
 	#if DEBUGGING
-	std::cout<<"Writing client connect message of size "<<buffer.getDataSize()<<std::endl;
+	std::cout<<" message size "<<buffer.getDataSize()<<std::endl;
 	#endif
 	
 	/* Write the message's total size first: */
-	pipe.write<unsigned int>(buffer.getDataSize());
+	pipe.write<Card>(buffer.getDataSize());
 	
 	/* Write the message itself: */
 	buffer.writeToSink(pipe);
@@ -296,16 +312,25 @@ void CheriaServer::beforeServerUpdate(ProtocolServer::ClientState* cs)
 		Misc::throwStdErr("CheriaServer::beforeServerUpdate: Client state object has mismatching type");
 	
 	/* Send the current states of the source client's managed input devices: */
-	myCs->messageBuffer.write<MessageIdType>(DEVICE_STATES);
+	writeMessage(DEVICE_STATES,myCs->messageBuffer);
 	for(ClientDeviceMap::Iterator cdIt=myCs->clientDevices.begin();!cdIt.isFinished();++cdIt)
 		{
-		/* Send a device state message: */
-		myCs->messageBuffer.write<unsigned int>(cdIt->getSource());
-		cdIt->getDest()->write(myCs->messageBuffer);
+		if(cdIt->getDest()->updateMask!=DeviceState::NO_CHANGE)
+			{
+			/* Send a device state message: */
+			myCs->messageBuffer.write<Card>(cdIt->getSource());
+			cdIt->getDest()->write(cdIt->getDest()->updateMask,myCs->messageBuffer);
+			
+			/* Reset the device's update mask: */
+			cdIt->getDest()->updateMask=DeviceState::NO_CHANGE;
+			}
 		}
+	
+	/* Terminate the device state update message: */
+	myCs->messageBuffer.write<Card>(0);
 	}
 
-void CheriaServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void CheriaServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	/* Get handles on the Cheria state objects: */
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
@@ -319,7 +344,7 @@ void CheriaServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoc
 	*********************************************************************/
 	
 	/* Send the total size of the message first: */
-	pipe.write<unsigned int>(mySourceCs->messageBuffer.getDataSize());
+	pipe.write<Card>(mySourceCs->messageBuffer.getDataSize());
 	
 	/* Write the message itself: */
 	mySourceCs->messageBuffer.writeToSink(pipe);
@@ -334,14 +359,6 @@ void CheriaServer::afterServerUpdate(ProtocolServer::ClientState* cs)
 	
 	/* Clear the client's message buffer: */
 	myCs->messageBuffer.clear();
-	
-	/* Mark the client's devices as old: */
-	for(ClientDeviceMap::Iterator cdIt=myCs->clientDevices.begin();!cdIt.isFinished();++cdIt)
-		cdIt->getDest()->newDevice=false;
-	
-	/* Mark the client's tools as old: */
-	for(ClientToolMap::Iterator ctIt=myCs->clientTools.begin();!ctIt.isFinished();++ctIt)
-		ctIt->getDest()->newTool=false;
 	}
 
 }

@@ -1,5 +1,5 @@
 ========================================================================
-README for Collaboration Infrastructure version 1.6
+README for Collaboration Infrastructure version 2.0
 Copyright (c) 2008-2011 Oliver Kreylos
 ========================================================================
 
@@ -34,7 +34,7 @@ Science Foundation.
 Requirements
 ============
 
-The Collaboration Infrastructure requires Vrui version 2.1 build 001 or
+The Collaboration Infrastructure requires Vrui version 2.2 build 001 or
 newer. To support audio and 2D video transmission, libspeex and
 libtheora have to be installed.
 
@@ -46,7 +46,7 @@ the Collaboration Infrastructure into a src directory underneath the
 user's home directory. Otherwise, references to ~/src in the following
 instructions need to be changed.
 
-0. Install Vrui from ~/src/Vrui-2.1-<build> (see Vrui README file).
+0. Install Vrui from ~/src/Vrui-<version>-<build> (see Vrui README file).
 
 1. Change into ~/src directory and unpack the Collaboration
    Infrastructure tarball:
@@ -63,15 +63,15 @@ instructions need to be changed.
    
    3a. Set the Vrui package root directory. This is the directory
        created from unpacking the Vrui tarball, i.e.,
-       ~/src/Vrui-2.1-<build>. Use $(HOME) to refer to the user's home
-       directory instead of ~. For example:
-       VRUIPACKAGEROOT := $(HOME)/src/Vrui-2.1-001
+       ~/src/Vrui-<version>-<build>. Use $(HOME) to refer to the user's
+       home directory instead of ~. For example:
+       VRUIPACKAGEROOT := $(HOME)/src/Vrui-2.2-001
    
    3b. Set the Vrui installation directory. This is the directory into
        which Vrui is installed during build, as configured in Vrui's
-       makefile. By default, this is ~/Vrui-2.1. Again, use $(HOME)
-       instead of ~. For example:
-       INSTALLDIR = $(HOME)/Vrui-2.1
+       makefile. By default, this is ~/Vrui-<version>. Again, use
+       $(HOME) instead of ~. For example:
+       INSTALLDIR = $(HOME)/Vrui-2.2
    
    These are typically the only necessary changes. If you made any
    changes to Vrui's makefile, please check the notes in the makefile
@@ -88,7 +88,7 @@ Configuring the Local Collaboration Environment
 
 The runtime system of the Collaboration Infrastructure is configured via
 a configuration file Collaboration.cfg in Vrui's configuration
-directory, which is $(INSTALLDIR)/etc, or, by default, ~/Vrui-2.1/etc.
+directory, which is $(INSTALLDIR)/etc, or, by default, ~/Vrui-2.2/etc.
 The configuration file contains sections for the collaboration server
 and the collaboration client, which in turn includes a section for each
 configured protocol plug-in.

@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2010 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -31,8 +31,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Misc/ThrowStdErr.h>
 #include <Misc/StandardValueCoders.h>
 #include <Misc/CompoundValueCoders.h>
-#include <Comm/MulticastPipe.h>
-#include <Geometry/OrthogonalTransformation.h>
+#include <Cluster/OpenPipe.h>
 #include <GL/gl.h>
 #include <GL/GLFont.h>
 #include <GL/GLGeometryWrappers.h>
@@ -46,6 +45,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <GLMotif/TextField.h>
 #include <GLMotif/ToggleButton.h>
 #include <Vrui/Vrui.h>
+#include <Vrui/Viewer.h>
 
 namespace Collaboration {
 
@@ -70,42 +70,22 @@ void CollaborationClient::Configuration::setClientName(std::string newClientName
 	cfg.storeString("./clientName",newClientName);
 	}
 
-/********************************************
-Methods of class CollaborationClient::Client:
-********************************************/
+/*******************************************************
+Methods of class CollaborationClient::RemoteClientState:
+*******************************************************/
 
-CollaborationClient::Client::~Client(void)
+CollaborationClient::RemoteClientState::RemoteClientState(void)
+	:clientID(0),
+	 updateMask(ClientState::NO_CHANGE),
+	 nameTextField(0),followToggle(0),faceToggle(0)
+	{
+	}
+
+CollaborationClient::RemoteClientState::~RemoteClientState(void)
 	{
 	/* Delete all protocol client state objects: */
 	for(RemoteClientProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
 		delete pIt->protocolClientState;
-	}
-
-/*************************************************
-Methods of class CollaborationClient::ServerState:
-*************************************************/
-
-CollaborationClient::ServerState::ServerState(void)
-	:numClients(0),clientIDs(0),clientStates(0)
-	{
-	}
-
-CollaborationClient::ServerState::~ServerState(void)
-	{
-	delete[] clientIDs;
-	delete[] clientStates;
-	}
-
-void CollaborationClient::ServerState::resize(unsigned int newNumClients)
-	{
-	if(newNumClients!=numClients)
-		{
-		delete[] clientIDs;
-		delete[] clientStates;
-		numClients=newNumClients;
-		clientIDs=numClients!=0?new unsigned int[numClients]:0;
-		clientStates=numClients!=0?new CollaborationPipe::ClientState[numClients]:0;
-		}
 	}
 
 /************************************
@@ -261,100 +241,100 @@ void CollaborationClient::showSettingsToggleValueChangedCallback(GLMotif::Toggle
 		}
 	}
 
-void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData,const unsigned int& clientID)
 	{
 	if(cbData->set)
 		{
-		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
-		
-		if(followClientIndex>=0)
+		if(followClientID!=0)
 			{
-			if(newClientIndex!=followClientIndex)
+			if(clientID!=followClientID)
 				{
+				Threads::Mutex::Lock clientMapLock(clientMapMutex);
+				
 				/* Unset the previously set toggle: */
-				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
-				if(oldToggle!=0)
-					oldToggle->setToggle(false);
+				RemoteClientState* oldFollowClient=remoteClientMap.getEntry(followClientID).getDest();
+				oldFollowClient->followToggle->setToggle(false);
 				
 				/* Follow the new client: */
-				followClientIndex=newClientIndex;
+				followClientID=clientID;
 				}
 			}
-		else if(faceClientIndex>=0)
+		else if(faceClientID!=0)
 			{
+			Threads::Mutex::Lock clientMapLock(clientMapMutex);
+			
 			/* Unset the previously set toggle: */
-			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
-			if(oldToggle!=0)
-				oldToggle->setToggle(false);
+			RemoteClientState* oldFaceClient=remoteClientMap.getEntry(faceClientID).getDest();
+			oldFaceClient->faceToggle->setToggle(false);
 			
 			/* Stop facing the old client: */
-			faceClientIndex=-1;
+			faceClientID=0;
 			
 			/* Follow the new client: */
-			followClientIndex=newClientIndex;
+			followClientID=clientID;
 			}
 		else
 			{
 			/* Try to enable following: */
 			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
-				followClientIndex=newClientIndex;
+				followClientID=clientID;
 			else
 				cbData->toggle->setToggle(false);
 			}
 		}
-	else if(followClientIndex>=0)
+	else if(followClientID!=0)
 		{
 		/* Disable following: */
-		followClientIndex=-1;
+		followClientID=0;
 		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
 		}
 	}
 
-void CollaborationClient::faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData)
+void CollaborationClient::faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData,const unsigned int& clientID)
 	{
 	if(cbData->set)
 		{
-		int newClientIndex=clientListRowColumn->getChildRow(cbData->toggle);
-		
-		if(faceClientIndex>=0)
+		if(faceClientID!=0)
 			{
-			if(newClientIndex!=faceClientIndex)
+			if(clientID!=faceClientID)
 				{
+				Threads::Mutex::Lock clientMapLock(clientMapMutex);
+				
 				/* Unset the previously set toggle: */
-				GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(faceClientIndex*3+2));
-				if(oldToggle!=0)
-					oldToggle->setToggle(false);
+				RemoteClientState* oldFaceClient=remoteClientMap.getEntry(faceClientID).getDest();
+				oldFaceClient->faceToggle->setToggle(false);
 				
 				/* Face the new client: */
-				faceClientIndex=newClientIndex;
+				faceClientID=clientID;
 				}
 			}
-		else if(followClientIndex>=0)
+		else if(followClientID!=0)
 			{
+			Threads::Mutex::Lock clientMapLock(clientMapMutex);
+			
 			/* Unset the previously set toggle: */
-			GLMotif::ToggleButton* oldToggle=dynamic_cast<GLMotif::ToggleButton*>(clientListRowColumn->getChild(followClientIndex*3+1));
-			if(oldToggle!=0)
-				oldToggle->setToggle(false);
+			RemoteClientState* oldFollowClient=remoteClientMap.getEntry(followClientID).getDest();
+			oldFollowClient->followToggle->setToggle(false);
 			
 			/* Stop following the old client: */
-			followClientIndex=-1;
+			followClientID=0;
 			
 			/* Face the new client: */
-			faceClientIndex=newClientIndex;
+			faceClientID=clientID;
 			}
 		else
 			{
 			/* Try to enable facing: */
 			if(Vrui::activateNavigationTool(reinterpret_cast<Vrui::Tool*>(this)))
-				faceClientIndex=newClientIndex;
+				faceClientID=clientID;
 			else
 				cbData->toggle->setToggle(false);
 			}
 		}
-	else if(faceClientIndex>=0)
+	else if(faceClientID!=0)
 		{
 		/* Disable facing: */
-		faceClientIndex=-1;
+		faceClientID=0;
 		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
 		}
 	}
@@ -378,58 +358,75 @@ void* CollaborationClient::communicationThreadMethod(void)
 	{
 	/* Enable immediate cancellation of this thread: */
 	Threads::Thread::setCancelState(Threads::Thread::CANCEL_ENABLE);
-	Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
+	// Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
+	
+	/* Create a private client map: */
+	RemoteClientMap myClientMap(17);
+	
+	enum State // Possible states of the client communication state machine
+		{
+		START,CONNECTED,FINISH
+		};
 	
 	/* Run the server communication state machine until the client disconnects or there is a communication error: */
 	try
 		{
-		bool keepGoing=true;
-		while(keepGoing)
+		State state=CONNECTED;
+		while(state!=FINISH)
 			{
 			/* Wait for the next message: */
-			CollaborationPipe::MessageIdType message=pipe->readMessage();
+			MessageIdType message=readMessage(*pipe);
 			
 			/* Process the message: */
 			switch(message)
 				{
-				case CollaborationPipe::DISCONNECT_REPLY:
+				case DISCONNECT_REPLY:
 					/* Let protocol plug-ins receive their own disconnect reply messages: */
 					for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
 						(*pIt)->receiveDisconnectReply(*pipe);
 					
 					/* Process higher-level protocols: */
 					receiveDisconnectReply();
-
+					
 					/* Bail out: */
-					keepGoing=false;
+					state=FINISH;
+					
+					/* Wake up the main program: */
+					Vrui::requestUpdate();
 					break;
 				
-				case CollaborationPipe::CLIENT_CONNECT:
+				case CLIENT_CONNECT:
 					{
 					/* Create a new client state structure: */
-					Client* newClient=new Client;
+					RemoteClientState* newClient=new RemoteClientState;
 					
 					/* Receive the new client's state: */
-					newClient->clientID=pipe->read<unsigned int>();
-					newClient->name=pipe->read<std::string>();
+					newClient->clientID=pipe->read<Card>();
+					ClientState& newState=newClient->state.startNewValue();
+					readClientState(newState,*pipe);
+					std::string newClientName=newState.clientName;
+					newClient->state.postNewValue();
+					
+					/* Add the client to the private map: */
+					myClientMap[newClient->clientID]=newClient;
 					
 					#ifdef VERBOSE
-					std::cout<<"CollaborationClient: Connecting new remote client "<<newClient->clientID<<", name "<<newClient->name<<std::endl;
+					std::cout<<"CollaborationClient: Connecting new remote client "<<newClient->clientID<<", name "<<newClientName<<std::endl;
 					#endif
 					
 					/* Receive the list of protocols shared with the remote client, and let the plug-ins read their message payloads: */
-					unsigned int numProtocols=pipe->read<unsigned int>();
+					unsigned int numProtocols=pipe->read<Card>();
 					for(unsigned int i=0;i<numProtocols;++i)
 						{
 						/* Read the protocol index and get the protocol plug-in: */
-						unsigned int protocolIndex=pipe->read<unsigned int>();
+						unsigned int protocolIndex=pipe->read<Card>();
 						ProtocolClient* protocol=protocols[protocolIndex];
 						
 						/* Let the protocol plug-in read its message payload: */
 						ProtocolRemoteClientState* prcs=protocol->receiveClientConnect(*pipe);
 						
 						/* Store the shared protocol: */
-						newClient->protocols.push_back(Client::ProtocolListEntry(protocol,prcs));
+						newClient->protocols.push_back(RemoteClientState::ProtocolListEntry(protocol,prcs));
 						}
 					
 					/* Process higher-level protocols: */
@@ -437,8 +434,7 @@ void* CollaborationClient::communicationThreadMethod(void)
 					
 					{
 					/* Ask to have the new client added to the list: */
-					Threads::Mutex::Lock clientListLock(clientListMutex);
-					clientHash.setEntry(ClientHash::Entry(newClient->clientID,newClient));
+					Threads::Mutex::Lock actionListLock(actionListMutex);
 					actionList.push_back(ClientListAction(ClientListAction::ADD_CLIENT,newClient->clientID,newClient));
 					}
 					
@@ -447,15 +443,17 @@ void* CollaborationClient::communicationThreadMethod(void)
 					break;
 					}
 				
-				case CollaborationPipe::CLIENT_DISCONNECT:
+				case CLIENT_DISCONNECT:
 					{
 					/* Read the disconnected client's ID: */
-					unsigned int clientID=pipe->read<unsigned int>();
+					unsigned int clientID=pipe->read<Card>();
+					
+					/* Remove the client from the private map: */
+					myClientMap.removeEntry(clientID);
 					
 					{
 					/* Ask to have the client removed from the list: */
-					Threads::Mutex::Lock clientListLock(clientListMutex);
-					clientHash.removeEntry(clientHash.findEntry(clientID));
+					Threads::Mutex::Lock actionListLock(actionListMutex);
 					actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,clientID,0));
 					}
 					
@@ -464,70 +462,85 @@ void* CollaborationClient::communicationThreadMethod(void)
 					break;
 					}
 				
-				case CollaborationPipe::SERVER_UPDATE:
+				case SERVER_UPDATE:
 					{
-					/* Update the next free slot in the server state triple buffer: */
-					ServerState& ss=serverState.startNewValue();
+					/*************************************************************
+					Process the server's state update packet:
+					*************************************************************/
 					
-					/* Receive the number of clients: */
-					unsigned int numClients=pipe->read<unsigned int>();
+					bool mustRefresh=false;
 					
-					/* Re-allocate the server state structure: */
-					ss.resize(numClients);
+					/* Receive the number of clients in this update packet: */
+					unsigned int numClients=pipe->read<Card>();
 					
 					/* Process plug-in protocols: */
 					for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
-						(*pIt)->receiveServerUpdate(*pipe);
+						mustRefresh=(*pIt)->receiveServerUpdate(*pipe)||mustRefresh;
 					
 					/* Process higher-level protocols: */
-					receiveServerUpdate();
+					mustRefresh=receiveServerUpdate()||mustRefresh;
 					
 					/* Receive the new state of all other connected clients: */
 					for(unsigned int clientIndex=0;clientIndex<numClients;++clientIndex)
 						{
-						/* Read the client's ID: */
-						ss.clientIDs[clientIndex]=pipe->read<unsigned int>();
+						/* Find the client's state object in the client map: */
+						unsigned int clientID=pipe->read<Card>();
+						RemoteClientState* client=myClientMap.getEntry(clientID).getDest();
 						
 						/* Read the client's transient state: */
-						pipe->readClientState(ss.clientStates[clientIndex]);
-						
-						/* Find the client's state object in the client hash: */
-						Client* client=clientHash.getEntry(ss.clientIDs[clientIndex]).getDest();
+						ClientState& newState=client->state.startNewValue();
+						newState=client->state.getMostRecentValue();
+						newState.updateMask=ClientState::NO_CHANGE;
+						readClientState(newState,*pipe);
+						client->updateMask|=newState.updateMask;
+						mustRefresh=mustRefresh||newState.updateMask!=ClientState::NO_CHANGE;
+						client->state.postNewValue();
 						
 						/* Process plug-in protocols shared with the remote client: */
-						for(Client::RemoteClientProtocolList::const_iterator cplIt=client->protocols.begin();cplIt!=client->protocols.end();++cplIt)
-							cplIt->protocol->receiveServerUpdate(cplIt->protocolClientState,*pipe);
+						for(RemoteClientState::RemoteClientProtocolList::const_iterator cplIt=client->protocols.begin();cplIt!=client->protocols.end();++cplIt)
+							mustRefresh=cplIt->protocol->receiveServerUpdate(cplIt->protocolClientState,*pipe)||mustRefresh;
 						
 						/* Process higher-level protocols: */
-						receiveServerUpdate(ss.clientIDs[clientIndex]);
+						mustRefresh=receiveServerUpdate(clientID)||mustRefresh;
 						}
 					
-					/* Post the new server state: */
-					serverState.postNewValue();
+					/* Wake up the main program if anything changed: */
+					if(mustRefresh)
+						Vrui::requestUpdate();
+					
+					/*************************************************************
+					Send a client update packet in response to the server update:
+					*************************************************************/
+					
+					/* Let protocol plug-ins insert their own messages before the main update message: */
+					for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
+						(*pIt)->beforeClientUpdate(*pipe);
 					
 					/* Process higher-level protocols: */
 					beforeClientUpdate();
 					
-					/* Send a client update packet to the server if state has been updated: */
-					if(localState.lockNewValue())
-						{
-						Threads::Mutex::Lock pipeLock(pipe->getMutex());
-						pipe->writeMessage(CollaborationPipe::CLIENT_UPDATE);
-						pipe->writeClientState(localState.getLockedValue());
-						
-						/* Let protocol plug-ins send their own client update messages: */
-						for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
-							(*pIt)->sendClientUpdate(*pipe);
-						
-						/* Process higher-level protocols: */
-						sendClientUpdate();
-						
-						/* Finish the message: */
-						pipe->flush();
-						}
+					{
+					Threads::Mutex::Lock pipeLock(pipeMutex);
+					writeMessage(CLIENT_UPDATE,*pipe);
 					
-					/* Wake up the main program: */
-					Vrui::requestUpdate();
+					/* Send the local client state: */
+					{
+					Threads::Spinlock::Lock clientStateLock(clientStateMutex);
+					writeClientState(clientState.updateMask,clientState,*pipe);
+					clientState.updateMask=ClientState::NO_CHANGE;
+					}
+					
+					/* Let protocol plug-ins send their own client update messages: */
+					for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
+						(*pIt)->sendClientUpdate(*pipe);
+					
+					/* Process higher-level protocols: */
+					sendClientUpdate();
+					
+					/* Finish the message: */
+					pipe->flush();
+					}
+					
 					break;
 					}
 				
@@ -560,46 +573,18 @@ void* CollaborationClient::communicationThreadMethod(void)
 		}
 	catch(std::runtime_error err)
 		{
-		/* Print error message to stderr and disconnect all remote clients: */
+		/* Disconnect all remote clients: */
 		std::cerr<<"CollaborationClient: Caught exception "<<err.what()<<std::endl<<std::flush;
 		
 		/* Kill the pipe: */
-		delete pipe;
 		pipe=0;
 		
+		/* Disconnect all remote clients: */
 		{
-		Threads::Mutex::Lock clientListLock(clientListMutex);
-		for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
-			actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,(*clIt)->clientID,0));
+		Threads::Mutex::Lock actionListLock(actionListMutex);
+		for(RemoteClientMap::Iterator cmIt=myClientMap.begin();!cmIt.isFinished();++cmIt)
+			actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,cmIt->getSource(),0));
 		}
-		
-		/* Create an empty server state: */
-		ServerState& ss=serverState.startNewValue();
-		ss.resize(0);
-		serverState.postNewValue();
-		
-		/* Wake up the main thread: */
-		Vrui::requestUpdate();
-		}
-	catch(...)
-		{
-		/* Print error message to stderr and disconnect all remote clients: */
-		std::cerr<<"CollaborationClient: Caught spurious exception"<<std::endl<<std::flush;
-		
-		/* Kill the pipe: */
-		delete pipe;
-		pipe=0;
-		
-		{
-		Threads::Mutex::Lock clientListLock(clientListMutex);
-		for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
-			actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,(*clIt)->clientID,0));
-		}
-		
-		/* Create an empty server state: */
-		ServerState& ss=serverState.startNewValue();
-		ss.resize(0);
-		serverState.postNewValue();
 		
 		/* Wake up the main thread: */
 		Vrui::requestUpdate();
@@ -608,12 +593,56 @@ void* CollaborationClient::communicationThreadMethod(void)
 	return 0;
 	}
 
+void CollaborationClient::updateClientState(void)
+	{
+	/* Update the physical environment: */
+	bool environmentChanged=false;
+	Scalar inchFactor=Scalar(Vrui::getInchFactor());
+	environmentChanged=environmentChanged||clientState.inchFactor!=inchFactor;
+	clientState.inchFactor=inchFactor;
+	Point displayCenter=Point(Vrui::getDisplayCenter());
+	environmentChanged=environmentChanged||clientState.displayCenter!=displayCenter;
+	clientState.displayCenter=displayCenter;
+	Scalar displaySize=Scalar(Vrui::getDisplaySize());
+	environmentChanged=environmentChanged||clientState.displaySize!=displaySize;
+	clientState.displaySize=displaySize;
+	Vector forward=Vector(Vrui::getForwardDirection());
+	environmentChanged=environmentChanged||clientState.forward!=forward;
+	clientState.forward=forward;
+	Vector up=Vector(Vrui::getUpDirection());
+	environmentChanged=environmentChanged||clientState.up!=up;
+	clientState.up=up;
+	Plane floorPlane=Plane(Vrui::getFloorPlane());
+	environmentChanged=environmentChanged||clientState.floorPlane!=floorPlane;
+	clientState.floorPlane=floorPlane;
+	if(environmentChanged)
+		clientState.updateMask|=ClientState::ENVIRONMENT;
+	
+	/* Update the positions/orientations of all viewers: */
+	bool viewersChanged=clientState.resize(Vrui::getNumViewers());
+	for(unsigned int i=0;i<clientState.numViewers;++i)
+		{
+		ONTransform viewerState=ONTransform(Vrui::getViewer(i)->getHeadTransformation());
+		viewersChanged=viewersChanged||clientState.viewerStates[i]!=viewerState;
+		clientState.viewerStates[i]=viewerState;
+		}
+	if(viewersChanged)
+		clientState.updateMask|=ClientState::VIEWER;
+	
+	/* Update the navigation transformation: */
+	OGTransform navTransform=OGTransform(Vrui::getNavigationTransformation());
+	if(clientState.navTransform!=navTransform)
+		{
+		clientState.navTransform=navTransform;
+		clientState.updateMask|=ClientState::NAVTRANSFORM;
+		}
+	}
+
 CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sConfiguration)
 	:configuration(sConfiguration!=0?sConfiguration:new Configuration),
 	 protocolLoader(configuration->cfg.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
-	 pipe(new CollaborationPipe(configuration->cfg.retrieveString("./serverHostName").c_str(),configuration->cfg.retrieveValue<int>("./serverPortId"),Vrui::openPipe())),
-	 clientHash(17),
-	 followClientIndex(-1),faceClientIndex(-1),
+	 remoteClientMap(17),protocolClientMap(31),
+	 followClientID(0),faceClientID(0),
 	 clientDialogPopup(0),showSettingsToggle(0),clientListRowColumn(0),
 	 settingsDialogPopup(0),
 	 fixGlyphScaling(false),renderRemoteEnvironments(false)
@@ -628,22 +657,24 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 		protocolLoader.getDsoLocator().addPath(*tspIt);
 		}
 	
+	/* Retrieve the client's display name: */
+	const char* clientNameS=getenv("HOSTNAME");
+	if(clientNameS==0)
+		clientNameS=getenv("HOST");
+	if(clientNameS==0)
+		clientNameS="Anonymous Coward";
+	setClientName(configuration->cfg.retrieveString("./clientName",clientNameS));
+	
 	/* Initialize the remote viewer and input device glyphs early: */
 	viewerGlyph.enable(Vrui::Glyph::CROSSBALL,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
-	#ifdef COLLABORATION_SHARE_DEVICES
-	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
-	#endif
 	
 	/* Load persistent configuration data: */
 	viewerGlyph.configure(configuration->cfg,"remoteViewerGlyphType","remoteViewerGlyphMaterial");
-	#ifdef COLLABORATION_SHARE_DEVICES
-	inputDeviceGlyph.configure(configuration->cfg,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
-	#endif
 	fixGlyphScaling=configuration->cfg.retrieveValue<bool>("./fixRemoteGlyphScaling",fixGlyphScaling);
 	renderRemoteEnvironments=configuration->cfg.retrieveValue<bool>("./renderRemoteEnvironments",renderRemoteEnvironments);
 	
 	/* Initialize the protocol message table to have invalid entries for the collaboration pipe's own messages: */
-	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
+	for(unsigned int i=0;i<MESSAGES_END;++i)
 		messageTable.push_back(0);
 	
 	/* Register all protocols listed in the configuration file section: */
@@ -663,7 +694,7 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 			
 			/* Initialize the protocol plug-in: */
 			Misc::ConfigurationFileSection protocolSection=configuration->cfg.getSection(pnIt->c_str());
-			newProtocol->initialize(*this,protocolSection);
+			newProtocol->initialize(this,protocolSection);
 			
 			/* Append the new protocol plug-in to the list: */
 			protocols.push_back(newProtocol);
@@ -676,7 +707,7 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 			{
 			/* Ignore the error and the protocol: */
 			#ifdef VERBOSE
-			std::cout<<"Failed due to excpetion "<<err.what()<<std::endl;
+			std::cout<<"Failed due to exception "<<err.what()<<std::endl;
 			#endif
 			}
 		}
@@ -684,13 +715,13 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 
 CollaborationClient::~CollaborationClient(void)
 	{
-	if(pipe!=0)
+	if(pipe!=0&&!communicationThread.isJoined())
 		{
 		{
-		Threads::Mutex::Lock pipeLock(pipe->getMutex());
+		Threads::Mutex::Lock pipeLock(pipeMutex);
 		
 		/* Send a disconnect message to the server: */
-		pipe->writeMessage(CollaborationPipe::DISCONNECT_REQUEST);
+		writeMessage(DISCONNECT_REQUEST,*pipe);
 		
 		/* Process plug-in protocols: */
 		for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
@@ -701,22 +732,22 @@ CollaborationClient::~CollaborationClient(void)
 		
 		/* Finish the message: */
 		pipe->flush();
-		pipe->shutdown(false,true);
 		}
+		
+		/* Wait until the communication thread receives the disconnect reply and terminates: */
+		communicationThread.join();
 		}
 	
-	/* Wait until the communication thread receives the disconnect reply and terminates: */
-	communicationThread.join();
-	
-	delete pipe;
+	/* Close the pipe: */
+	pipe=0;
 	
 	/* Delete the user interface: */
 	delete clientDialogPopup;
 	delete settingsDialogPopup;
 	
 	/* Disconnect all remote clients: */
-	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
-		delete *clIt;
+	for(RemoteClientMap::Iterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
+		delete cmIt->getDest();
 	
 	/* Delete all protocol plug-ins: */
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
@@ -727,6 +758,15 @@ CollaborationClient::~CollaborationClient(void)
 	delete configuration;
 	}
 
+void CollaborationClient::setClientName(std::string newClientName)
+	{
+	Threads::Spinlock::Lock clientStateLock(clientStateMutex);
+	
+	/* Update the client name: */
+	clientState.clientName=newClientName;
+	clientState.updateMask|=ClientState::CLIENTNAME;
+	}
+
 void CollaborationClient::registerProtocol(ProtocolClient* newProtocol)
 	{
 	/* Store the new protocol plug-in in the list: */
@@ -735,34 +775,36 @@ void CollaborationClient::registerProtocol(ProtocolClient* newProtocol)
 
 void CollaborationClient::connect(void)
 	{
-	/* Retrieve the client name: */
-	const char* clientNameS=getenv("HOSTNAME");
-	if(clientNameS==0)
-		clientNameS=getenv("HOST");
-	if(clientNameS==0)
-		clientNameS="Anonymous Coward";
-	std::string clientName=configuration->cfg.retrieveString("./clientName",clientNameS);
+	{
+	Threads::Mutex::Lock pipeLock(pipeMutex);
 	
+	/* Connect to the remote collaboration server: */
 	#ifdef VERBOSE
-	std::cout<<"Connecting to server "<<""<<" under client name "<<clientName<<std::endl;
+	std::cout<<"Connecting to server "<<configuration->cfg.retrieveString("./serverHostName")<<" under client name "<<clientState.clientName<<std::endl;
 	#endif
+	pipe=Cluster::openTCPPipe(Vrui::getClusterMultiplexer(),configuration->cfg.retrieveString("./serverHostName").c_str(),configuration->cfg.retrieveValue<int>("./serverPortId"));
+	pipe->negotiateEndianness();
 	
 	/* Send the connection initiation message: */
-	{
-	Threads::Mutex::Lock pipeLock(pipe->getMutex());
+	writeMessage(CONNECT_REQUEST,*pipe);
 	
-	pipe->writeMessage(CollaborationPipe::CONNECT_REQUEST);
-	pipe->write<std::string>(clientName);
+	/* Write the initial client state: */
+	{
+	Threads::Spinlock::Lock clientStateLock(clientStateMutex);
+	updateClientState();
+	writeClientState(ClientState::FULL_UPDATE,clientState,*pipe);
+	clientState.updateMask=ClientState::NO_CHANGE;
+	}
 	
 	/* Write names and message payloads of all registered protocols: */
 	#ifdef VERBOSE
 	std::cout<<"Requesting protocols";
 	#endif
-	pipe->write<unsigned int>(protocols.size());
+	pipe->write<Card>(protocols.size());
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
 		{
 		/* Write the protocol name: */
-		pipe->write<std::string>(std::string((*pIt)->getName()));
+		write(std::string((*pIt)->getName()),*pipe);
 		
 		#ifdef VERBOSE
 		std::cout<<' '<<(*pIt)->getName();
@@ -786,19 +828,19 @@ void CollaborationClient::connect(void)
 	#ifdef VERBOSE
 	std::cout<<"Waiting for connection reply..."<<std::flush;
 	#endif
-	CollaborationPipe::MessageIdType message=pipe->readMessage();
-	if(message==CollaborationPipe::CONNECT_REJECT)
+	MessageIdType message=readMessage(*pipe);
+	if(message==CONNECT_REJECT)
 		{
 		#ifdef VERBOSE
 		std::cout<<" rejected"<<std::endl;
 		#endif
 		
 		/* Read the list of negotiated protocols and their message payloads: */
-		unsigned int numNegotiatedProtocols=pipe->read<unsigned int>();
+		unsigned int numNegotiatedProtocols=pipe->read<Card>();
 		for(unsigned int i=0;i<numNegotiatedProtocols;++i)
 			{
 			/* Read the next protocol index: */
-			unsigned int protocolIndex=pipe->read<unsigned int>();
+			unsigned int protocolIndex=pipe->read<Card>();
 			
 			/* Let the negotiated protocol read its payload: */
 			protocols[protocolIndex]->receiveConnectReject(*pipe);
@@ -808,17 +850,17 @@ void CollaborationClient::connect(void)
 		receiveConnectReject();
 		
 		/* Bail out: */
-		delete pipe;
+		pipe=0;
 		Misc::throwStdErr("CollaborationClient::CollaborationClient: Connection refused by collaboration server");
 		}
-	else if(message!=CollaborationPipe::CONNECT_REPLY)
+	else if(message!=CONNECT_REPLY)
 		{
 		#ifdef VERBOSE
 		std::cout<<" error"<<std::endl;
 		#endif
 		
 		/* Bail out: */
-		delete pipe;
+		pipe=0;
 		Misc::throwStdErr("CollaborationClient::CollaborationClient: Protocol error during connection initialization");
 		}
 	#ifdef VERBOSE
@@ -826,13 +868,13 @@ void CollaborationClient::connect(void)
 	#endif
 	
 	/* Read the list of negotiated protocols and their message payloads: */
-	unsigned int numNegotiatedProtocols=pipe->read<unsigned int>();
+	unsigned int numNegotiatedProtocols=pipe->read<Card>();
 	ProtocolList negotiatedProtocols;
 	negotiatedProtocols.reserve(numNegotiatedProtocols);
 	for(unsigned int i=0;i<numNegotiatedProtocols;++i)
 		{
 		/* Read the protocol index: */
-		unsigned int protocolIndex=pipe->read<unsigned int>();
+		unsigned int protocolIndex=pipe->read<Card>();
 		
 		/* Move the protocol plug-in from the original list to the negotiated list: */
 		ProtocolClient* protocol=protocols[protocolIndex];
@@ -840,7 +882,7 @@ void CollaborationClient::connect(void)
 		protocols[protocolIndex]=0;
 		
 		/* Assign the protocol's message ID base and update the message ID table: */
-		protocol->messageIdBase=pipe->read<unsigned int>();
+		protocol->messageIdBase=pipe->read<Card>();
 		while(messageTable.size()<protocol->messageIdBase)
 			messageTable.push_back(0);
 		unsigned int numMessages=protocol->getNumMessages();
@@ -850,7 +892,10 @@ void CollaborationClient::connect(void)
 		/* Let the protocol plug-in read its message payload: */
 		protocol->receiveConnectReply(*pipe);
 		#ifdef VERBOSE
-		std::cout<<"Negotiated protocol "<<protocol->getName()<<" with message IDs "<<protocol->messageIdBase<<" to "<<protocol->messageIdBase+numMessages-1<<std::endl;
+		if(numMessages>0)
+			std::cout<<"Negotiated protocol "<<protocol->getName()<<" with message IDs "<<protocol->messageIdBase<<" to "<<protocol->messageIdBase+numMessages-1<<std::endl;
+		else
+			std::cout<<"Negotiated protocol "<<protocol->getName()<<std::endl;
 		#endif
 		}
 	
@@ -900,6 +945,9 @@ void CollaborationClient::setRenderRemoteEnvironments(bool enable)
 
 void CollaborationClient::showDialog(void)
 	{
+	if(clientDialogPopup==0)
+		return;
+	
 	/* Pop up the dialog: */
 	Vrui::popupPrimaryWidget(clientDialogPopup);
 	
@@ -910,6 +958,9 @@ void CollaborationClient::showDialog(void)
 
 void CollaborationClient::hideDialog(void)
 	{
+	if(clientDialogPopup==0)
+		return;
+	
 	/* Pop down the settings dialog if it is selected: */
 	if(showSettingsToggle->getToggle())
 		Vrui::popdownPrimaryWidget(settingsDialogPopup);
@@ -920,94 +971,104 @@ void CollaborationClient::hideDialog(void)
 
 void CollaborationClient::frame(void)
 	{
+	/* Lock the client map: */
+	Threads::Mutex::Lock clientMapLock(clientMapMutex);
+	
 	/* Process the action list: */
 	{
-	Threads::Mutex::Lock clientListLock(clientListMutex);
+	Threads::Mutex::Lock actionListLock(actionListMutex);
 	for(ActionList::iterator alIt=actionList.begin();alIt!=actionList.end();++alIt)
 		{
 		switch(alIt->action)
 			{
 			case ClientListAction::ADD_CLIENT:
 				{
-				Client* client=alIt->client;
+				RemoteClientState* client=alIt->client;
+				client->state.lockNewValue();
 				
 				#ifdef VERBOSE
-				std::cout<<"Adding new remote client "<<client->name<<", ID "<<alIt->clientID<<std::endl;
+				std::cout<<"Adding new remote client "<<client->state.getLockedValue().clientName<<", ID "<<alIt->clientID<<std::endl;
 				#endif
 				
-				/* Store the new client state in the list: */
-				clientList.push_back(client);
+				/* Store the new client state in the client map: */
+				remoteClientMap[alIt->clientID]=client;
 				
 				/* Add a row for the new client to the client list dialog: */
-				char textFieldName[40];
-				snprintf(textFieldName,sizeof(textFieldName),"ClientName%u",alIt->clientID);
-				GLMotif::TextField* clientName=new GLMotif::TextField(textFieldName,clientListRowColumn,20);
-				clientName->setHAlignment(GLFont::Left);
-				clientName->setString(client->name.c_str());
+				char widgetName[40];
+				snprintf(widgetName,sizeof(widgetName),"ClientName%u",alIt->clientID);
+				client->nameTextField=new GLMotif::TextField(widgetName,clientListRowColumn,20);
+				client->nameTextField->setHAlignment(GLFont::Left);
+				client->nameTextField->setString(client->state.getLockedValue().clientName.c_str());
 				
-				char toggleName[40];
-				snprintf(toggleName,sizeof(toggleName),"FollowClientToggle%u",alIt->clientID);
-				GLMotif::ToggleButton* followClientToggle=new GLMotif::ToggleButton(toggleName,clientListRowColumn,"Follow");
-				followClientToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
-				followClientToggle->getValueChangedCallbacks().add(this,&CollaborationClient::followClientToggleValueChangedCallback);
+				snprintf(widgetName,sizeof(widgetName),"FollowClientToggle%u",alIt->clientID);
+				client->followToggle=new GLMotif::ToggleButton(widgetName,clientListRowColumn,"Follow");
+				client->followToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
+				client->followToggle->getValueChangedCallbacks().add(this,&CollaborationClient::followClientToggleValueChangedCallback,client->clientID);
 				
-				snprintf(toggleName,sizeof(toggleName),"FaceClientToggle%u",alIt->clientID);
-				GLMotif::ToggleButton* faceClientToggle=new GLMotif::ToggleButton(toggleName,clientListRowColumn,"Face");
-				faceClientToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
-				faceClientToggle->getValueChangedCallbacks().add(this,&CollaborationClient::faceClientToggleValueChangedCallback);
+				snprintf(widgetName,sizeof(widgetName),"FaceClientToggle%u",alIt->clientID);
+				client->faceToggle=new GLMotif::ToggleButton(widgetName,clientListRowColumn,"Face");
+				client->faceToggle->setToggleType(GLMotif::ToggleButton::RADIO_BUTTON);
+				client->faceToggle->getValueChangedCallbacks().add(this,&CollaborationClient::faceClientToggleValueChangedCallback,client->clientID);
 				
 				/* Process protocol plug-ins: */
-				for(Client::RemoteClientProtocolList::iterator pIt=client->protocols.begin();pIt!=client->protocols.end();++pIt)
+				for(RemoteClientState::RemoteClientProtocolList::iterator pIt=client->protocols.begin();pIt!=client->protocols.end();++pIt)
+					{
+					/* Add the protocol client state to the remote client look-up map: */
+					protocolClientMap[pIt->protocolClientState]=client;
+					
+					/* Let the protocol client do its connection protocol: */
 					pIt->protocol->connectClient(pIt->protocolClientState);
+					}
 				
 				break;
 				}
 			
 			case ClientListAction::REMOVE_CLIENT:
 				{
-				/* Find the removed client's client state structure: */
-				ClientList::iterator clIt;
-				int clientIndex=0;
-				for(clIt=clientList.begin();clIt!=clientList.end()&&(*clIt)->clientID!=alIt->clientID;++clIt,++clientIndex)
-					;
-				if(clIt!=clientList.end())
+				RemoteClientMap::Iterator cmIt=remoteClientMap.findEntry(alIt->clientID);
+				if(!cmIt.isFinished())
 					{
+					RemoteClientState* client=cmIt->getDest();
+					
 					#ifdef VERBOSE
-					std::cout<<"Removing remote client "<<(*clIt)->name<<", ID "<<(*clIt)->clientID<<std::endl;
+					std::cout<<"Removing remote client "<<client->state.getLockedValue().clientName<<", ID "<<client->clientID<<std::endl;
 					#endif
 					
 					/* Update the index of the followed/faced client: */
-					if(followClientIndex==clientIndex)
+					if(followClientID==client->clientID)
 						{
 						/* Disable client following: */
-						followClientIndex=-1;
+						followClientID=0;
 						Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
 						}
-					else if(followClientIndex>clientIndex)
-						--followClientIndex;
-					if(faceClientIndex==clientIndex)
+					if(faceClientID==client->clientID)
 						{
 						/* Disable client facing: */
-						faceClientIndex=-1;
+						faceClientID=0;
 						Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
 						}
-					else if(faceClientIndex>clientIndex)
-						--faceClientIndex;
 					
 					/* Process protocol plug-ins: */
-					for(Client::RemoteClientProtocolList::iterator pIt=(*clIt)->protocols.begin();pIt!=(*clIt)->protocols.end();++pIt)
+					for(RemoteClientState::RemoteClientProtocolList::iterator pIt=client->protocols.begin();pIt!=client->protocols.end();++pIt)
+						{
+						/* Let the protocol client do its disconnection protocol: */
 						pIt->protocol->disconnectClient(pIt->protocolClientState);
+						
+						/* Remove the protocol client state from the remote client look-up map: */
+						protocolClientMap.removeEntry(pIt->protocolClientState);
+						}
 					
 					/* Process higher-level protocols: */
-					disconnectClient((*clIt)->clientID);
-					
-					/* Remove the client state structure from the client list: */
-					delete *clIt;
-					clientList.erase(clIt);
+					disconnectClient(client->clientID);
 					
 					/* Remove the client from the client list dialog: */
-					clientListRowColumn->removeWidgets(clientIndex);
+					clientListRowColumn->removeWidgets(clientListRowColumn->getChildRow(client->nameTextField));
+					
+					/* Destroy the client state structure and remove it from the client map: */
+					delete client;
+					remoteClientMap.removeEntry(cmIt);
 					}
+				
 				break;
 				}
 			}
@@ -1018,53 +1079,51 @@ void CollaborationClient::frame(void)
 	}
 	
 	/* Update the local client state structure: */
-	CollaborationPipe::ClientState& ls=localState.startNewValue();
-	ls.updateFromVrui();
-	localState.postNewValue();
+	{
+	Threads::Spinlock::Lock clientStateLock(clientStateMutex);
+	updateClientState();
+	}
 	
-	/* Check for new server states: */
-	if(serverState.lockNewValue())
+	/* Update all remote clients' states: */
+	for(RemoteClientMap::Iterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
 		{
-		if(followClientIndex>=0)
+		RemoteClientState* client=cmIt->getDest();
+		if(client->state.lockNewValue())
 			{
-			const ServerState& ss=serverState.getLockedValue();
-			
-			/* Update the navigation transformation: */
-			unsigned int followClientID=clientList[followClientIndex]->clientID;
-			for(unsigned int clientIndex=0;clientIndex<ss.numClients;++clientIndex)
-				if(ss.clientIDs[clientIndex]==followClientID)
+			ClientState& cs=client->state.getLockedValue();
+			if(client->updateMask&ClientState::CLIENTNAME)
+				client->nameTextField->setString(cs.clientName.c_str());
+			if(client->updateMask&(ClientState::ENVIRONMENT|ClientState::NAVTRANSFORM))
+				{
+				if(client->clientID==followClientID)
 					{
-					const CollaborationPipe::ClientState& cs=ss.clientStates[clientIndex];
-					
+					/* Update the navigation transformation: */
 					Vrui::NavTransform nav=Vrui::NavTransform::identity;
 					nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
 					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
-					nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize()/Vrui::Scalar(cs.size));
+					nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize());
+					nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.displaySize));
 					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
-					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.center));
+					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
+					nav*=cs.navTransform;
 					Vrui::setNavigationTransformation(nav);
 					}
-			}
-		else if(faceClientIndex>=0)
-			{
-			const ServerState& ss=serverState.getLockedValue();
-			
-			/* Update the navigation transformation: */
-			unsigned int faceClientID=clientList[faceClientIndex]->clientID;
-			for(unsigned int clientIndex=0;clientIndex<ss.numClients;++clientIndex)
-				if(ss.clientIDs[clientIndex]==faceClientID)
+				if(client->clientID==faceClientID)
 					{
-					const CollaborationPipe::ClientState& cs=ss.clientStates[clientIndex];
-					
+					/* Update the navigation transformation: */
 					Vrui::NavTransform nav=Vrui::NavTransform::identity;
 					nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
 					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::rotateAxis(Vrui::getUpDirection(),Math::rad(Vrui::Scalar(180))));
 					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
-					nav*=Vrui::NavTransform::scale(Vrui::getInchFactor()/Vrui::Scalar(cs.inchScale));
+					nav*=Vrui::NavTransform::scale(Vrui::getInchFactor());
+					nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.inchFactor));
 					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
-					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.center));
+					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
+					nav*=cs.navTransform;
 					Vrui::setNavigationTransformation(nav);
 					}
+				}
+			client->updateMask=ClientState::NO_CHANGE;
 			}
 		}
 	
@@ -1073,21 +1132,26 @@ void CollaborationClient::frame(void)
 		(*pIt)->frame();
 	
 	/* Call the client-specific protocol plug-in frame method for each remote client: */
-	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+	for(RemoteClientMap::Iterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
 		{
 		/* Process all protocols shared with the remote client: */
-		for(Client::RemoteClientProtocolList::iterator cpIt=(*clIt)->protocols.begin();cpIt!=(*clIt)->protocols.end();++cpIt)
+		RemoteClientState* client=cmIt->getDest();
+		for(RemoteClientState::RemoteClientProtocolList::iterator cpIt=client->protocols.begin();cpIt!=client->protocols.end();++cpIt)
 			cpIt->protocol->frame(cpIt->protocolClientState);
 		}
 	}
 
 void CollaborationClient::display(GLContextData& contextData) const
 	{
-	/* Display the currently locked server state: */
-	const ServerState& ss=serverState.getLockedValue();
-	for(unsigned int clientIndex=0;clientIndex<ss.numClients;++clientIndex)
+	/* Display all client states: */
+	for(RemoteClientMap::ConstIterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
 		{
-		const CollaborationPipe::ClientState& cs=ss.clientStates[clientIndex];
+		const RemoteClientState* client=cmIt->getDest();
+		const ClientState& cs=client->state.getLockedValue();
+		
+		/* Go to the client's navigational space: */
+		glPushMatrix();
+		glMultMatrix(Geometry::invert(cs.navTransform));
 		
 		if(renderRemoteEnvironments)
 			{
@@ -1098,11 +1162,11 @@ void CollaborationClient::display(GLContextData& contextData) const
 			
 			glBegin(GL_LINES);
 			glColor3f(1.0f,0.0f,0.0f);
-			glVertex(cs.center);
-			glVertex(cs.center+cs.forward*(cs.size/CollaborationPipe::Scalar(Geometry::mag(cs.forward))));
+			glVertex(cs.displayCenter);
+			glVertex(cs.displayCenter+cs.forward*(cs.displaySize/Scalar(Geometry::mag(cs.forward))));
 			glColor3f(0.0f,1.0f,0.0f);
-			glVertex(cs.center);
-			glVertex(cs.center+cs.up*(cs.size/CollaborationPipe::Scalar(Geometry::mag(cs.up))));
+			glVertex(cs.displayCenter);
+			glVertex(cs.displayCenter+cs.up*(cs.displaySize/Scalar(Geometry::mag(cs.up))));
 			glEnd();
 			
 			glPopAttrib();
@@ -1113,24 +1177,13 @@ void CollaborationClient::display(GLContextData& contextData) const
 			if(fixGlyphScaling)
 				{
 				Vrui::NavTransform temp=cs.viewerStates[i];
-				temp.getScaling()=Vrui::Scalar(1.0)/Vrui::getNavigationTransformation().getScaling();
+				temp.getScaling()=cs.navTransform.getScaling()/Vrui::getNavigationTransformation().getScaling();
 				Vrui::renderGlyph(viewerGlyph,temp,contextData);
 				}
 			else
 				Vrui::renderGlyph(viewerGlyph,cs.viewerStates[i],contextData);
 		
-		#ifdef COLLABORATION_SHARE_DEVICES
-		/* Render all input devices of this client: */
-		for(unsigned int i=0;i<cs.numInputDevices;++i)
-			if(fixGlyphScaling)
-				{
-				Vrui::NavTransform temp=cs.inputDeviceStates[i];
-				temp.getScaling()=Vrui::Scalar(1.0)/Vrui::getNavigationTransformation().getScaling();
-				Vrui::renderGlyph(inputDeviceGlyph,temp,contextData);
-				}
-			else
-				Vrui::renderGlyph(inputDeviceGlyph,cs.inputDeviceStates[i],contextData);
-		#endif
+		glPopMatrix();
 		}
 	
 	/* Call all protocol plug-ins' GL render actions: */
@@ -1138,10 +1191,11 @@ void CollaborationClient::display(GLContextData& contextData) const
 		(*pIt)->glRenderAction(contextData);
 	
 	/* Call the client-specific protocol plug-in GL render actions for each remote client: */
-	for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+	for(RemoteClientMap::ConstIterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
 		{
 		/* Process all protocols shared with the remote client: */
-		for(Client::RemoteClientProtocolList::const_iterator cpIt=(*clIt)->protocols.begin();cpIt!=(*clIt)->protocols.end();++cpIt)
+		const RemoteClientState* client=cmIt->getDest();
+		for(RemoteClientState::RemoteClientProtocolList::const_iterator cpIt=client->protocols.begin();cpIt!=client->protocols.end();++cpIt)
 			cpIt->protocol->glRenderAction(cpIt->protocolClientState,contextData);
 		}
 	}
@@ -1153,10 +1207,11 @@ void CollaborationClient::sound(ALContextData& contextData) const
 		(*pIt)->alRenderAction(contextData);
 	
 	/* Call the client-specific protocol plug-in AL render actions for each remote client: */
-	for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+	for(RemoteClientMap::ConstIterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
 		{
 		/* Process all protocols shared with the remote client: */
-		for(Client::RemoteClientProtocolList::const_iterator cpIt=(*clIt)->protocols.begin();cpIt!=(*clIt)->protocols.end();++cpIt)
+		const RemoteClientState* client=cmIt->getDest();
+		for(RemoteClientState::RemoteClientProtocolList::const_iterator cpIt=client->protocols.begin();cpIt!=client->protocols.end();++cpIt)
 			cpIt->protocol->alRenderAction(cpIt->protocolClientState,contextData);
 		}
 	}
@@ -1189,15 +1244,17 @@ void CollaborationClient::receiveClientConnect(unsigned int clientID)
 	{
 	}
 
-void CollaborationClient::receiveServerUpdate(void)
+bool CollaborationClient::receiveServerUpdate(void)
 	{
+	return false;
 	}
 
-void CollaborationClient::receiveServerUpdate(unsigned int clientID)
+bool CollaborationClient::receiveServerUpdate(unsigned int clientID)
 	{
+	return false;
 	}
 
-bool CollaborationClient::handleMessage(CollaborationPipe::MessageIdType messageId)
+bool CollaborationClient::handleMessage(Protocol::MessageIdType messageId)
 	{
 	return false;
 	}

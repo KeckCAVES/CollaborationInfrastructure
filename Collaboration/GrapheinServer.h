@@ -1,7 +1,7 @@
 /***********************************************************************
 GrapheinServer - Server object to implement the Graphein shared
 annotation protocol.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,28 +21,30 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef GRAPHEINSERVER_INCLUDED
-#define GRAPHEINSERVER_INCLUDED
+#ifndef COLLABORATION_GRAPHEINSERVER_INCLUDED
+#define COLLABORATION_GRAPHEINSERVER_INCLUDED
 
 #include <vector>
+#include <IO/VariableMemoryFile.h>
 #include <Collaboration/ProtocolServer.h>
-
-#include <Collaboration/GrapheinPipe.h>
+#include <Collaboration/GrapheinProtocol.h>
 
 namespace Collaboration {
 
-class GrapheinServer:public ProtocolServer,public GrapheinPipe
+class GrapheinServer:public ProtocolServer,private GrapheinProtocol
 	{
 	/* Embedded classes: */
-	protected:
+	private:
+	typedef IO::VariableMemoryFile MessageBuffer; // Buffer to hold outgoing messages from a client between two updates
+	
 	class ClientState:public ProtocolServer::ClientState
 		{
 		friend class GrapheinServer;
 		
 		/* Elements: */
 		private:
-		CurveHasher curves; // The set of curves currently owned by the client
-		CurveActionList actions; // The queue of pending curve actions
+		CurveMap curves; // The set of curves currently owned by the client
+		MessageBuffer messageBuffer; // Buffer for outgoing messages from this client
 		
 		/* Constructors and destructors: */
 		ClientState(void);
@@ -51,16 +53,16 @@ class GrapheinServer:public ProtocolServer,public GrapheinPipe
 	
 	/* Constructors and destructors: */
 	public:
-	GrapheinServer(void); // Creates an Graphein server object
+	GrapheinServer(void); // Creates a Graphein server object
 	virtual ~GrapheinServer(void); // Destroys the Graphein server object
 	
 	/* Methods from ProtocolServer: */
 	virtual const char* getName(void) const;
 	virtual unsigned int getNumMessages(void) const;
-	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe);
-	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe);
-	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
-	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe);
+	virtual ProtocolServer::ClientState* receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe);
+	virtual void receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe);
+	virtual void sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe);
+	virtual void sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe);
 	virtual void afterServerUpdate(ProtocolServer::ClientState* cs);
 	};
 

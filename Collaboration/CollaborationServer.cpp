@@ -2,7 +2,7 @@
 CollaborationServer - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2009 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -29,6 +29,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Misc/ThrowStdErr.h>
 #include <Misc/StandardValueCoders.h>
 #include <Misc/CompoundValueCoders.h>
+#include <Comm/TCPPipe.h>
 
 namespace Collaboration {
 
@@ -56,10 +57,11 @@ double CollaborationServer::Configuration::getTickTime(void)
 Methods of class CollaborationServer::ClientConnection:
 ******************************************************/
 
-CollaborationServer::ClientConnection::ClientConnection(unsigned int sClientID,const Comm::TCPSocket& socket)
-	:clientID(sClientID),pipe(&socket),
-	 clientHostname(socket.getPeerHostname(false)),
-	 clientPortId(socket.getPeerPortId())
+CollaborationServer::ClientConnection::ClientConnection(unsigned int sClientID,Comm::NetPipePtr sPipe)
+	:clientID(sClientID),pipe(sPipe),
+	 clientHostname(pipe->getPeerHostName()),
+	 clientPortId(pipe->getPeerPortId()),
+	 stateUpdateMask(ClientState::NO_CHANGE)
 	{
 	}
 
@@ -75,14 +77,14 @@ bool CollaborationServer::ClientConnection::negotiateProtocols(CollaborationServ
 	bool result=true;
 	
 	/* Read the list of protocol plug-ins registered on the client, and match them against the server's list: */
-	unsigned int numProtocols=pipe.read<unsigned int>();
+	unsigned int numProtocols=pipe->read<Card>();
 	for(unsigned int i=0;i<numProtocols&&result;++i)
 		{
 		/* Read the protocol name: */
-		std::string protocolName=pipe.read<std::string>();
+		std::string protocolName=read<std::string>(*pipe);
 		
 		/* Read the length of the protocol-specific message payload: */
-		size_t protocolMessageLength=pipe.read<unsigned int>();
+		size_t protocolMessageLength=pipe->read<Card>();
 		
 		/* Ask the server to load the protocol: */
 		#ifdef VERBOSE
@@ -92,7 +94,7 @@ bool CollaborationServer::ClientConnection::negotiateProtocols(CollaborationServ
 		if(ps.first!=0)
 			{
 			/* Let the protocol plug-in process the message payload: */
-			ProtocolClientState* pcs=ps.first->receiveConnectRequest(protocolMessageLength,pipe);
+			ProtocolClientState* pcs=ps.first->receiveConnectRequest(protocolMessageLength,*pipe);
 			
 			#ifdef VERBOSE
 			if(pcs!=0)
@@ -119,22 +121,14 @@ bool CollaborationServer::ClientConnection::negotiateProtocols(CollaborationServ
 			#endif
 			
 			/* Skip the protocol message payload: */
-			unsigned char skipBuffer[256];
-			while(protocolMessageLength>0)
-				{
-				size_t skipSize=protocolMessageLength;
-				if(skipSize>256)
-					skipSize=256;
-				pipe.read<unsigned char>(skipBuffer,skipSize);
-				protocolMessageLength-=skipSize;
-				}
+			pipe->skip<Byte>(protocolMessageLength);
 			}
 		}
 	
 	return result;
 	}
 
-void CollaborationServer::ClientConnection::sendClientConnectProtocols(ClientConnection* dest,CollaborationPipe& pipe)
+void CollaborationServer::ClientConnection::sendClientConnectProtocols(ClientConnection* dest,Comm::NetPipe& destPipe)
 	{
 	/* Count the number of protocol plug-ins supported by both clients: */
 	unsigned int numSharedProtocols=0;
@@ -157,7 +151,7 @@ void CollaborationServer::ClientConnection::sendClientConnectProtocols(ClientCon
 		}
 	
 	/* Write the number of shared protocols: */
-	pipe.write<unsigned int>(numSharedProtocols);
+	destPipe.write<Card>(numSharedProtocols);
 	
 	/* Now send the actual protocol messages: */
 	i1=0;
@@ -171,10 +165,10 @@ void CollaborationServer::ClientConnection::sendClientConnectProtocols(ClientCon
 		else
 			{
 			/* Write the destination client's protocol index: */
-			pipe.write<unsigned int>(i2);
+			destPipe.write<Card>(i2);
 			
 			/* Let the protocol send its data: */
-			cpl1[i1].protocol->sendClientConnect(cpl1[i1].protocolClientState,cpl2[i2].protocolClientState,pipe);
+			cpl1[i1].protocol->sendClientConnect(cpl1[i1].protocolClientState,cpl2[i2].protocolClientState,destPipe);
 			
 			++i1;
 			++i2;
@@ -190,7 +184,7 @@ void* CollaborationServer::listenThreadMethod(void)
 	{
 	/* Enable immediate cancellation of this thread: */
 	Threads::Thread::setCancelState(Threads::Thread::CANCEL_ENABLE);
-	Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
+	// Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
 	
 	while(true)
 		{
@@ -198,7 +192,7 @@ void* CollaborationServer::listenThreadMethod(void)
 		#ifdef VERBOSE
 		std::cout<<"CollaborationServer: Waiting for client connection"<<std::endl<<std::flush;
 		#endif
-		Comm::TCPSocket clientSocket=listenSocket.accept();
+		Comm::NetPipePtr clientPipe=new Comm::TCPPipe(listenSocket);
 		
 		/**************************************************************************
 		Connect the new client by creating a new client connection state structure:
@@ -207,8 +201,10 @@ void* CollaborationServer::listenThreadMethod(void)
 		try
 			{
 			/* Create a new client connection state structure: */
-			ClientConnection* newClientConnection=new ClientConnection(nextClientID,clientSocket);
-			++nextClientID;
+			clientPipe->negotiateEndianness();
+			ClientConnection* newClientConnection=new ClientConnection(nextClientID,clientPipe);
+			if(++nextClientID==0)
+				nextClientID=1;
 			
 			#ifdef VERBOSE
 			std::cout<<"CollaborationServer: Connecting new client from host "<<newClientConnection->clientHostname<<", port "<<newClientConnection->clientPortId<<std::endl<<std::flush;
@@ -221,10 +217,6 @@ void* CollaborationServer::listenThreadMethod(void)
 			{
 			std::cerr<<"CollaborationServer: Cancelled connecting new client due to exception "<<err.what()<<std::endl<<std::flush;
 			}
-		catch(...)
-			{
-			std::cerr<<"CollaborationServer: Cancelled connecting new client due to spurious exception"<<std::endl<<std::flush;
-			}
 		}
 	
 	return 0;
@@ -234,14 +226,15 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 	{
 	/* Enable immediate cancellation of this thread: */
 	Threads::Thread::setCancelState(Threads::Thread::CANCEL_ENABLE);
-	Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
+	// Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
 	
 	enum State // Possible states of the client communication state machine
 		{
 		START,CONNECTED,FINISH
 		};
 	
-	CollaborationPipe& pipe=client->pipe;
+	Threads::Mutex& pipeMutex=client->pipeMutex;
+	Comm::NetPipe& pipe=*(client->pipe);
 	unsigned int clientID=client->clientID;
 	
 	/* Run the client communication state machine until the client disconnects or there is a communication error: */
@@ -252,7 +245,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 		while(state!=FINISH)
 			{
 			/* Wait for the next message: */
-			CollaborationPipe::MessageIdType message=pipe.readMessage();
+			MessageIdType message=readMessage(pipe);
 			
 			/* Process the message based on the communication state: */
 			switch(state)
@@ -265,12 +258,12 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 					
 					switch(message)
 						{
-						case CollaborationPipe::CONNECT_REQUEST:
+						case CONNECT_REQUEST:
 							{
-							/* Read the client's display name: */
-							client->name=pipe.read<std::string>();
-							
 							bool connectionOk=true;
+							
+							/* Read the client's initial client state: */
+							readClientState(client->state,pipe);
 							
 							/* Negotiate protocol plug-ins with the new client: */
 							connectionOk=connectionOk&&client->negotiateProtocols(*this);
@@ -287,20 +280,20 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 								{
 								/* Send connect reply message: */
 								{
-								Threads::Mutex::Lock pipeLock(pipe.getMutex());
-								pipe.writeMessage(CollaborationPipe::CONNECT_REPLY);
+								Threads::Mutex::Lock pipeLock(pipeMutex);
+								writeMessage(CONNECT_REPLY,pipe);
 								
 								/* Write the number of negotiated protocols: */
-								pipe.write<unsigned int>(client->protocols.size());
+								pipe.write<Card>(client->protocols.size());
 								
 								/* Let all negotiated protocols insert their message payloads: */
 								for(ClientConnection::ClientProtocolList::const_iterator cpIt=client->protocols.begin();cpIt!=client->protocols.end();++cpIt)
 									{
 									/* Write the client's index of the protocol: */
-									pipe.write<unsigned int>(cpIt->clientIndex);
+									pipe.write<Card>(cpIt->clientIndex);
 									
 									/* Write the protocol's message ID base: */
-									pipe.write<unsigned int>(cpIt->protocol->messageIdBase);
+									pipe.write<Card>(cpIt->protocol->messageIdBase);
 									
 									/* Write the protocol's message payload: */
 									cpIt->protocol->sendConnectReply(cpIt->protocolClientState,pipe);
@@ -314,20 +307,20 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 								Threads::Mutex::Lock clientListLock(clientListMutex);
 								for(ClientList::const_iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
 									{
-									{
 									Threads::Mutex::Lock clientLock((*clIt)->mutex);
 									
 									/* Send a client connect message: */
-									pipe.writeMessage(CollaborationPipe::CLIENT_CONNECT);
-									pipe.write<unsigned int>((*clIt)->clientID);
-									pipe.write<std::string>((*clIt)->name);
+									writeMessage(CLIENT_CONNECT,pipe);
+									pipe.write<Card>((*clIt)->clientID);
+									
+									/* Send the full client state: */
+									writeClientState(ClientState::FULL_UPDATE,(*clIt)->state,pipe);
 									
 									/* Send the intersection of protocol plug-ins negotiated with both clients to the client: */
 									(*clIt)->sendClientConnectProtocols(client,pipe);
 									
 									/* Process higher-level protocols: */
 									sendClientConnect((*clIt)->clientID,clientID,pipe);
-									}
 									}
 								
 								/* Add client action to list: */
@@ -339,7 +332,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 								}
 								
 								#ifdef VERBOSE
-								std::cout<<"CollaborationServer: Connected client from host "<<client->clientHostname<<", port "<<client->clientPortId<<" as "<<client->name<<std::endl<<std::flush;
+								std::cout<<"CollaborationServer: Connected client from host "<<client->clientHostname<<", port "<<client->clientPortId<<" as "<<client->state.clientName<<std::endl<<std::flush;
 								#endif
 								
 								state=CONNECTED;
@@ -347,19 +340,19 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 							else
 								{
 								{
-								Threads::Mutex::Lock pipeLock(pipe.getMutex());
+								Threads::Mutex::Lock pipeLock(pipeMutex);
 								
 								/* Reject the connection request: */
-								pipe.writeMessage(CollaborationPipe::CONNECT_REJECT);
+								writeMessage(CONNECT_REJECT,pipe);
 								
 								/* Write the number of negotiated protocols (including the one that might have failed): */
-								pipe.write<unsigned int>(client->protocols.size());
+								pipe.write<Card>(client->protocols.size());
 								
 								/* Inform all protocol plug-ins that have seen the CONNECT_REQUEST message: */
 								for(ClientConnection::ClientProtocolList::const_iterator cpIt=client->protocols.begin();cpIt!=client->protocols.end();++cpIt)
 									{
 									/* Write the client's index of the protocol: */
-									pipe.write<unsigned int>(cpIt->clientIndex);
+									pipe.write<Card>(cpIt->clientIndex);
 									
 									cpIt->protocol->sendConnectReject(cpIt->protocolClientState,pipe);
 									}
@@ -392,14 +385,14 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 					
 					switch(message)
 						{
-						case CollaborationPipe::CLIENT_UPDATE:
+						case CLIENT_UPDATE:
 							{
 							{
 							/* Lock client state: */
 							Threads::Mutex::Lock clientLock(client->mutex);
 							
-							/* Read the transient client state: */
-							pipe.readClientState(client->state);
+							/* Read the client's updated client state: */
+							readClientState(client->state,pipe);
 							
 							/* Let protocol plug-ins read their own client update messages: */
 							for(ClientConnection::ClientProtocolList::iterator cplIt=client->protocols.begin();cplIt!=client->protocols.end();++cplIt)
@@ -412,7 +405,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 							break;
 							}
 						
-						case CollaborationPipe::DISCONNECT_REQUEST:
+						case DISCONNECT_REQUEST:
 							{
 							{
 							/* Lock client state: */
@@ -426,10 +419,10 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 							receiveDisconnectRequest(clientID,pipe);
 							
 							{
-							Threads::Mutex::Lock pipeLock(pipe.getMutex());
+							Threads::Mutex::Lock pipeLock(pipeMutex);
 							
 							/* Send a disconnect reply: */
-							pipe.writeMessage(CollaborationPipe::DISCONNECT_REPLY);
+							writeMessage(DISCONNECT_REPLY,pipe);
 							
 							/* Let protocol plug-ins insert their own disconnect reply messages: */
 							for(ClientConnection::ClientProtocolList::iterator cplIt=client->protocols.begin();cplIt!=client->protocols.end();++cplIt)
@@ -492,12 +485,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 	catch(std::runtime_error err)
 		{
 		/* Print error message to stderr and disconnect the client: */
-		std::cerr<<"CollaborationServer: Terminating client connection due to exception "<<err.what()<<std::endl<<std::flush;
-		}
-	catch(...)
-		{
-		/* Print error message to stderr and disconnect the client: */
-		std::cerr<<"CollaborationServer: Terminating client connection due to spurious exception"<<std::endl<<std::flush;
+		std::cerr<<"CollaborationServer::clientCommunicationThread: Terminating client connection due to exception "<<err.what()<<std::endl<<std::flush;
 		}
 	
 	/******************************************************************************************
@@ -505,7 +493,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 	******************************************************************************************/
 	
 	#ifdef VERBOSE
-	std::cout<<"CollaborationServer: Disconnecting client from host "<<client->clientHostname<<", port "<<client->clientPortId<<std::endl<<std::flush;
+	std::cout<<"CollaborationServer::clientCommunicationThread: Disconnecting client from host "<<client->clientHostname<<", port "<<client->clientPortId<<std::endl<<std::flush;
 	#endif
 	
 	/* Delete the client state structure directly, or defer to main thread: */
@@ -524,7 +512,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 			/* Remove the request to add the client from the action list: */
 			actionList.erase(alIt);
 			
-			/* Delete the client connection state structure immediately (closing the TCP socket): */
+			/* Delete the client connection state structure immediately (closing the TCP pipe): */
 			delete client;
 			
 			/* Process higher-level protocols: */
@@ -538,7 +526,7 @@ void* CollaborationServer::clientCommunicationThreadMethod(CollaborationServer::
 		}
 	else
 		{
-		/* Delete the client connection state structure immediately (closing the TCP socket): */
+		/* Delete the client connection state structure immediately (closing the TCP pipe): */
 		delete client;
 		
 		/* Process higher-level protocols: */
@@ -553,7 +541,7 @@ CollaborationServer::CollaborationServer(CollaborationServer::Configuration* sCo
 	:configuration(sConfiguration!=0?sConfiguration:new Configuration),
 	 protocolLoader(configuration->cfg.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
 	 listenSocket(configuration->cfg.retrieveValue<int>("./listenPortId",-1),0),
-	 nextClientID(0)
+	 nextClientID(1)
 	{
 	typedef std::vector<std::string> StringList;
 	
@@ -565,8 +553,8 @@ CollaborationServer::CollaborationServer(CollaborationServer::Configuration* sCo
 		protocolLoader.getDsoLocator().addPath(*tspIt);
 		}
 	
-	/* Initialize the protocol message table to have invalid entries for the collaboration pipe's own messages: */
-	for(unsigned int i=0;i<CollaborationPipe::MESSAGES_END;++i)
+	/* Initialize the protocol message table to have invalid entries for the protocol's own messages: */
+	for(unsigned int i=0;i<MESSAGES_END;++i)
 		messageTable.push_back(0);
 	
 	/* Start connection initiating thread: */
@@ -587,15 +575,26 @@ CollaborationServer::~CollaborationServer(void)
 	listenThread.cancel();
 	listenThread.join();
 	
-	/* Disconnect all clients: */
-	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+	if(!clientList.empty())
 		{
-		/* Stop client communication thread: */
-		(*clIt)->communicationThread.cancel();
-		(*clIt)->communicationThread.join();
+		#ifdef VERBOSE
+		std::cout<<"CollaborationServer: Disconnecting "<<clientList.size()<<" clients"<<std::endl<<std::flush;
+		#endif
 		
-		/* Delete client connection state structure (closing TCP socket): */
-		delete *clIt;
+		/* Disconnect all clients: */
+		for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+			{
+			{
+			Threads::Mutex::Lock clientLock((*clIt)->mutex);
+
+			/* Stop client communication thread: */
+			(*clIt)->communicationThread.cancel();
+			(*clIt)->communicationThread.join();
+			}
+
+			/* Delete client connection state structure (closing TCP pipe): */
+			delete *clIt;
+			}
 		}
 	}
 	
@@ -660,8 +659,13 @@ std::pair<ProtocolServer*,int> CollaborationServer::loadProtocol(std::string pro
 			for(unsigned int i=0;i<numMessages;++i)
 				messageTable.push_back(result.first);
 			#ifdef VERBOSE
-			std::cout<<"Protocol "<<protocolName<<" is assigned message IDs "<<result.first->messageIdBase<<" to "<<result.first->messageIdBase+numMessages-1<<std::endl;
+			if(numMessages>0)
+				std::cout<<"Protocol "<<protocolName<<" is assigned message IDs "<<result.first->messageIdBase<<" to "<<result.first->messageIdBase+numMessages-1<<std::endl;
 			#endif
+			
+			/* Initialize the protocol: */
+			Misc::ConfigurationFileSection protocolSection=configuration->cfg.getSection(protocolName.c_str());
+			result.first->initialize(this,protocolSection);
 			}
 		catch(std::runtime_error err)
 			{
@@ -724,7 +728,7 @@ void CollaborationServer::update(void)
 						cplIt->protocol->disconnectClient(cplIt->protocolClientState);
 					}
 					
-					/* Delete client connection state structure (closing TCP socket): */
+					/* Delete client connection state structure (closing TCP pipe): */
 					delete *clIt;
 					
 					/* Remove the client from the list: */
@@ -758,12 +762,12 @@ void CollaborationServer::update(void)
 	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
 		{
 		ClientConnection* destClient=*clIt;
-		CollaborationPipe& pipe=destClient->pipe;
+		Comm::NetPipe& pipe=*(destClient->pipe);
 		
 		try
 			{
 			{
-			Threads::Mutex::Lock pipeLock(pipe.getMutex());
+			Threads::Mutex::Lock pipeLock(destClient->pipeMutex);
 			
 			/* Check the client state action list for any actions relevant for this client: */
 			for(ActionList::const_iterator alIt=actionList.begin();alIt!=actionList.end();++alIt)
@@ -785,9 +789,11 @@ void CollaborationServer::update(void)
 							if(newClient!=0)
 								{
 								/* Send a client connect message: */
-								pipe.writeMessage(CollaborationPipe::CLIENT_CONNECT);
-								pipe.write<unsigned int>(newClient->clientID);
-								pipe.write<std::string>(newClient->name);
+								writeMessage(CLIENT_CONNECT,pipe);
+								pipe.write<Card>(newClient->clientID);
+								
+								/* Send the full state of the client: */
+								writeClientState(ClientState::FULL_UPDATE,newClient->state,pipe);
 								
 								/* Send the intersection of protocol plug-ins negotiated with both clients to the client: */
 								newClient->sendClientConnectProtocols(destClient,pipe);
@@ -801,8 +807,8 @@ void CollaborationServer::update(void)
 						case ClientListAction::REMOVE_CLIENT:
 							{
 							/* Send a client disconnect message: */
-							pipe.writeMessage(CollaborationPipe::CLIENT_DISCONNECT);
-							pipe.write<unsigned int>(alIt->clientID);
+							writeMessage(CLIENT_DISCONNECT,pipe);
+							pipe.write<Card>(alIt->clientID);
 							
 							break;
 							}
@@ -817,8 +823,8 @@ void CollaborationServer::update(void)
 			beforeServerUpdate(destClient->clientID,pipe);
 			
 			/* Send the server update packet header: */
-			pipe.writeMessage(CollaborationPipe::SERVER_UPDATE);
-			pipe.write<unsigned int>(clientList.size()-1);
+			writeMessage(SERVER_UPDATE,pipe);
+			pipe.write<Card>(clientList.size()-1);
 			
 			/* Process plug-in protocols for the client: */
 			for(ClientConnection::ClientProtocolList::iterator cplIt=destClient->protocols.begin();cplIt!=destClient->protocols.end();++cplIt)
@@ -834,8 +840,8 @@ void CollaborationServer::update(void)
 					ClientConnection* sourceClient=*cl2It;
 					
 					/* Send the server update packet: */
-					pipe.write<unsigned int>(sourceClient->clientID);
-					pipe.writeClientState(sourceClient->state);
+					pipe.write<Card>(sourceClient->clientID);
+					writeClientState(sourceClient->state.updateMask,sourceClient->state,pipe);
 					
 					/* Process plug-in protocols shared by the two clients: */
 					ClientConnection::ClientProtocolList::iterator cpl1It=sourceClient->protocols.begin();
@@ -866,26 +872,10 @@ void CollaborationServer::update(void)
 		catch(std::runtime_error err)
 			{
 			/* Forcibly disconnect clients that cause pipe errors during a state update: */
-			std::cerr<<"CollaborationServer: Terminating client connection due to exception "<<err.what()<<std::endl;
+			std::cerr<<"CollaborationServer::update: Terminating client connection due to exception "<<err.what()<<std::endl;
 			
 			#ifdef VERBOSE
-			std::cout<<"CollaborationServer: Disconnecting client from host "<<destClient->clientHostname<<", port "<<destClient->clientPortId<<std::endl<<std::flush;
-			#endif
-			
-			/* Stop client communication thread: */
-			destClient->communicationThread.cancel();
-			destClient->communicationThread.join();
-			
-			/* Properly disconnect the client on the next update: */
-			deadClientList.push_back(destClient);
-			}
-		catch(...)
-			{
-			/* Forcibly disconnect clients that cause pipe errors during a state update: */
-			std::cerr<<"CollaborationServer: Terminating client connection due to spurious exception"<<std::endl;
-			
-			#ifdef VERBOSE
-			std::cout<<"CollaborationServer: Disconnecting client from host "<<destClient->clientHostname<<", port "<<destClient->clientPortId<<std::endl<<std::flush;
+			std::cout<<"CollaborationServer::update: Disconnecting client from host "<<destClient->clientHostname<<", port "<<destClient->clientPortId<<std::endl<<std::flush;
 			#endif
 			
 			/* Stop client communication thread: */
@@ -913,6 +903,10 @@ void CollaborationServer::update(void)
 	/* Clear the client state list action list: */
 	actionList.clear();
 	
+	/* Reset change flags on all clients' state objects: */
+	for(ClientList::iterator clIt=clientList.begin();clIt!=clientList.end();++clIt)
+		(*clIt)->state.updateMask=ClientState::NO_CHANGE;
+	
 	/* Mark all dead clients for removal on the next update: */
 	for(std::vector<ClientConnection*>::const_iterator dclIt=deadClientList.begin();dclIt!=deadClientList.end();++dclIt)
 		{
@@ -927,45 +921,45 @@ void CollaborationServer::update(void)
 	}
 	}
 
-bool CollaborationServer::receiveConnectRequest(unsigned int clientID,CollaborationPipe& pipe)
+bool CollaborationServer::receiveConnectRequest(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	/* Default behavior is to accept all connections: */
 	return true;
 	}
 
-void CollaborationServer::sendConnectReply(unsigned int clientID,CollaborationPipe& pipe)
+void CollaborationServer::sendConnectReply(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::sendConnectReject(unsigned int clientID,CollaborationPipe& pipe)
+void CollaborationServer::sendConnectReject(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::receiveDisconnectRequest(unsigned int clientID,CollaborationPipe& pipe)
+void CollaborationServer::receiveDisconnectRequest(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::sendDisconnectReply(unsigned int clientID,CollaborationPipe& pipe)
+void CollaborationServer::sendDisconnectReply(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::receiveClientUpdate(unsigned int clientID,CollaborationPipe& pipe)
+void CollaborationServer::receiveClientUpdate(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::sendClientConnect(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe)
+void CollaborationServer::sendClientConnect(unsigned int sourceClientID,unsigned int destClientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::sendServerUpdate(unsigned int destClientID,CollaborationPipe& pipe)
+void CollaborationServer::sendServerUpdate(unsigned int destClientID,Comm::NetPipe& pipe)
 	{
 	}
 
-void CollaborationServer::sendServerUpdate(unsigned int sourceClientID,unsigned int destClientID,CollaborationPipe& pipe)
+void CollaborationServer::sendServerUpdate(unsigned int sourceClientID,unsigned int destClientID,Comm::NetPipe& pipe)
 	{
 	}
 
-bool CollaborationServer::handleMessage(unsigned int clientID,CollaborationPipe& pipe,CollaborationPipe::MessageIdType messageId)
+bool CollaborationServer::handleMessage(unsigned int clientID,Comm::NetPipe& pipe,Protocol::MessageIdType messageId)
 	{
 	/* Default behavior is to reject all unknown messages: */
 	return false;
@@ -979,7 +973,7 @@ void CollaborationServer::disconnectClient(unsigned int clientID)
 	{
 	}
 
-void CollaborationServer::beforeServerUpdate(unsigned int clientID,CollaborationPipe& pipe)
+void CollaborationServer::beforeServerUpdate(unsigned int clientID,Comm::NetPipe& pipe)
 	{
 	}
 

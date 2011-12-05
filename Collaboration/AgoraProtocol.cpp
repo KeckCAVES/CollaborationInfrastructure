@@ -1,7 +1,7 @@
 /***********************************************************************
-AgoraPipe - Common interface between an Agora server and an Agora
-client.
-Copyright (c) 2009-2010 Oliver Kreylos
+AgoraProtocol - Class defining the communication protocol between an
+Agora server and an Agora client.
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,15 +21,15 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#include <Collaboration/AgoraPipe.h>
+#include <Collaboration/AgoraProtocol.h>
 
 namespace Collaboration {
 
-/**********************************
-Static elements of class AgoraPipe:
-**********************************/
+/**************************************
+Static elements of class AgoraProtocol:
+**************************************/
 
-const char* AgoraPipe::protocolName="Agora"; // How inventive
-const unsigned int AgoraPipe::numProtocolMessages=0;
+const char* AgoraProtocol::protocolName="Agora"; // How inventive
+const unsigned int AgoraProtocol::protocolVersion=(2U<<16)+0U; // Version 2.0
 
 }

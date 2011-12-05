@@ -1,7 +1,7 @@
 /***********************************************************************
 FooClient - Dummy protocol plug-in class to stress-test the plug-in
 mechanism.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,14 +21,15 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef FOOCLIENT_INCLUDED
-#define FOOCLIENT_INCLUDED
+#ifndef COLLABORATION_FOOCLIENT_INCLUDED
+#define COLLABORATION_FOOCLIENT_INCLUDED
 
+#include <Collaboration/FooProtocol.h>
 #include <Collaboration/ProtocolClient.h>
 
 namespace Collaboration {
 
-class FooClient:public ProtocolClient
+class FooClient:public ProtocolClient,private FooProtocol
 	{
 	/* Embedded classes: */
 	protected:
@@ -48,20 +49,17 @@ class FooClient:public ProtocolClient
 	/* Methods from ProtocolClient: */
 	virtual const char* getName(void) const;
 	virtual unsigned int getNumMessages(void) const;
-	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
-	virtual void sendConnectRequest(CollaborationPipe& pipe);
-	virtual void receiveConnectReply(CollaborationPipe& pipe);
-	virtual void receiveConnectReject(CollaborationPipe& pipe);
-	virtual void sendDisconnectRequest(CollaborationPipe& pipe);
-	virtual void receiveDisconnectReply(CollaborationPipe& pipe);
-	virtual void sendClientUpdate(CollaborationPipe& pipe);
-	virtual ProtocolClient::RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
-	virtual void receiveClientDisconnect(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);
-	virtual void receiveServerUpdate(CollaborationPipe& pipe);
-	virtual void receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);
+	virtual void initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection);
+	virtual void sendConnectRequest(Comm::NetPipe& pipe);
+	virtual void receiveConnectReply(Comm::NetPipe& pipe);
+	virtual void receiveConnectReject(Comm::NetPipe& pipe);
+	virtual void sendDisconnectRequest(Comm::NetPipe& pipe);
+	virtual void receiveDisconnectReply(Comm::NetPipe& pipe);
+	virtual ProtocolClient::RemoteClientState* receiveClientConnect(Comm::NetPipe& pipe);
+	virtual bool receiveServerUpdate(Comm::NetPipe& pipe);
+	virtual bool receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe);
+	virtual void sendClientUpdate(Comm::NetPipe& pipe);
 	virtual void rejectedByServer(void);
-	virtual bool handleMessage(unsigned int messageId,CollaborationPipe& pipe);
-	virtual void beforeClientUpdate(CollaborationPipe& pipe);
 	virtual void connectClient(ProtocolClient::RemoteClientState* rcs);
 	virtual void disconnectClient(ProtocolClient::RemoteClientState* rcs);
 	virtual void frame(void);
@@ -70,6 +68,8 @@ class FooClient:public ProtocolClient
 	virtual void glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;
 	virtual void alRenderAction(ALContextData& contextData) const;
 	virtual void alRenderAction(const ProtocolClient::RemoteClientState* rcs,ALContextData& contextData) const;
+	virtual void beforeClientUpdate(Comm::NetPipe& pipe);
+	virtual bool handleMessage(unsigned int messageId,Comm::NetPipe& pipe);
 	};
 
 }

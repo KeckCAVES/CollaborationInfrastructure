@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaClient - Client object to implement the Cheria input device
 distribution protocol.
-Copyright (c) 2010 Oliver Kreylos
+Copyright (c) 2010-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,22 +21,21 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef CHERIACLIENT_INCLUDED
-#define CHERIACLIENT_INCLUDED
+#ifndef COLLABORATION_CHERIACLIENT_INCLUDED
+#define COLLABORATION_CHERIACLIENT_INCLUDED
 
 #include <Misc/HashTable.h>
-#include <Misc/WriteBuffer.h>
+#include <IO/VariableMemoryFile.h>
 #include <Threads/Mutex.h>
 #include <Vrui/GlyphRenderer.h>
 #include <Vrui/InputDeviceManager.h>
 #include <Vrui/ToolManager.h>
-
 #include <Collaboration/ProtocolClient.h>
-#include <Collaboration/CheriaPipe.h>
+#include <Collaboration/CheriaProtocol.h>
 
 /* Forward declarations: */
-namespace Misc {
-class ReadBuffer;
+namespace IO {
+class FixedMemoryFile;
 }
 namespace Vrui {
 class PointingTool;
@@ -44,23 +43,37 @@ class PointingTool;
 
 namespace Collaboration {
 
-class CheriaClient:public ProtocolClient,public CheriaPipe
+class CheriaClient:public ProtocolClient,private CheriaProtocol
 	{
 	/* Embedded classes: */
 	private:
+	typedef IO::FixedMemoryFile IncomingMessage; // Type for buffers storing incoming messages
+	typedef IO::VariableMemoryFile OutgoingMessage; // Type for buffers storing outgoing messages
+	
 	class RemoteClientState:public ProtocolClient::RemoteClientState
 		{
 		/* Embedded classes: */
 		public:
-		typedef Misc::HashTable<unsigned int,Vrui::InputDevice*> RemoteDeviceMap; // Hash table to map remote device IDs to local input device pointers
-		typedef Misc::HashTable<unsigned int,Vrui::PointingTool*> RemoteToolMap; // Hash table to map remote device IDs to local input device pointers
+		struct RemoteDeviceState:public DeviceState // Structure to represent remote devices and their states
+			{
+			/* Elements: */
+			public:
+			Vrui::InputDevice* device; // Pointer to local input device representing the remote device
+			
+			/* Constructors and destructors: */
+			RemoteDeviceState(IO::File& source); // Reads device state layout from the given source and creates local proxy device
+			~RemoteDeviceState(void); // Destroys local proxy device
+			};
+		
+		typedef Misc::HashTable<unsigned int,RemoteDeviceState*> RemoteDeviceMap; // Hash table to map remote device IDs to local input device pointers
+		typedef Misc::HashTable<unsigned int,Vrui::PointingTool*> RemoteToolMap; // Hash table to map remote device IDs to local pointing tool pointers
 		
 		/* Elements: */
 		CheriaClient& client; // Cheria client object to which the remote client state belongs
 		RemoteDeviceMap remoteDevices; // Map of remote client's device IDs to local input devices
 		RemoteToolMap remoteTools; // Map of remote client's tool IDs to local tools
 		Threads::Mutex messageBufferMutex; // Mutex serializing access to the message buffer list
-		std::vector<Misc::ReadBuffer*> messageBuffers; // List of buffers retaining server update messages between frame calls
+		std::vector<IncomingMessage*> messages; // List of buffers retaining server update messages between frame calls
 		
 		/* Constructors and destructors: */
 		RemoteClientState(CheriaClient& sClient);
@@ -70,13 +83,13 @@ class CheriaClient:public ProtocolClient,public CheriaPipe
 		void processMessages(void); // Reads and processes all queued server update messages
 		};
 	
-	struct LocalDeviceState // Structure to associate button and valuator masks with represented local devices
+	struct LocalDeviceState:public DeviceState // Structure to associate button and valuator masks with represented local devices
 		{
 		/* Elements: */
 		public:
 		unsigned int deviceId; // The device's local device ID
-		bool* buttonMasks; // Array of mask flags for each of the device's buttons, to disable those not used by local pointing tools
-		bool* valuatorMasks; // Array of mask flags for each of the device's valuators, to disable those not used by local pointing tools
+		Byte* buttonMasks; // Array of mask flags for each of the device's buttons, to disable those not used by local pointing tools
+		Byte* valuatorMasks; // Array of mask flags for each of the device's valuators, to disable those not used by local pointing tools
 		
 		/* Constructors and destructors: */
 		LocalDeviceState(unsigned int sDeviceId,const Vrui::InputDevice* device); // Initializes local device state from device's layout
@@ -94,8 +107,7 @@ class CheriaClient:public ProtocolClient,public CheriaPipe
 	LocalDeviceMap localDevices; // Hash table of local devices represented by the Cheria client
 	unsigned int nextLocalToolId; // Next ID to assign to a local tool
 	LocalToolMap localTools; // Hash table of local tools represented by the Cheria client
-	Misc::WriteBuffer messageBuffer; // Buffer to assemble client update messages as devices are created / destroyed
-	Threads::Mutex remoteDevicesMutex; // Mutex serializing access to the remote device set
+	OutgoingMessage message; // Buffer to assemble client update messages as devices are created / destroyed
 	volatile bool remoteClientCreatingDevice; // Flag if a remote Cheria client is currently creating an input device
 	volatile bool remoteClientDestroyingDevice; // Flag if a remote Cheria client is currently destroying an input device
 	volatile bool remoteClientCreatingTool; // Flag if a remote Cheria client is currently creating a tool
@@ -117,13 +129,14 @@ class CheriaClient:public ProtocolClient,public CheriaPipe
 	/* Methods from ProtocolClient: */
 	virtual const char* getName(void) const;
 	virtual unsigned int getNumMessages(void) const;
-	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
-	virtual void sendConnectRequest(CollaborationPipe& pipe);
-	virtual void receiveConnectReply(CollaborationPipe& pipe);
-	virtual void receiveDisconnectReply(CollaborationPipe& pipe);
-	virtual void sendClientUpdate(CollaborationPipe& pipe);
-	virtual ProtocolClient::RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
-	virtual void receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);
+	virtual void initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection);
+	virtual void sendConnectRequest(Comm::NetPipe& pipe);
+	virtual void receiveConnectReply(Comm::NetPipe& pipe);
+	virtual void receiveDisconnectReply(Comm::NetPipe& pipe);
+	virtual ProtocolClient::RemoteClientState* receiveClientConnect(Comm::NetPipe& pipe);
+	virtual bool receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe);
+	virtual void sendClientUpdate(Comm::NetPipe& pipe);
+	virtual void frame(void);
 	virtual void frame(ProtocolClient::RemoteClientState* rcs);
 	};
 

@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraClient - Client object to implement the Agora group audio protocol.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -20,8 +20,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef AGORACLIENT_INCLUDED
-#define AGORACLIENT_INCLUDED
+#ifndef COLLABORATION_AGORACLIENT_INCLUDED
+#define COLLABORATION_AGORACLIENT_INCLUDED
 
 #include <string>
 #include <Threads/MutexCond.h>
@@ -29,6 +29,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Threads/DropoutBuffer.h>
 #include <GL/gl.h>
 #include <GLMotif/ToggleButton.h>
+#include <Sound/Config.h>
 #include <Video/Config.h>
 #if VIDEO_CONFIG_HAVE_THEORA
 #include <Video/TheoraPacket.h>
@@ -38,11 +39,11 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #endif
 #include <AL/Config.h>
 #include <AL/ALObject.h>
-
 #include <Collaboration/ProtocolClient.h>
+#include <Collaboration/AgoraProtocol.h>
+#if SOUND_CONFIG_HAVE_SPEEX
 #include <Collaboration/SpeexDecoder.h>
-
-#include <Collaboration/AgoraPipe.h>
+#endif
 
 /* Forward declarations: */
 namespace Misc {
@@ -63,13 +64,15 @@ class ImageExtractor;
 class YpCbCr420Texture;
 }
 #endif
+#if SOUND_CONFIG_HAVE_SPEEX
 namespace Collaboration {
 class SpeexEncoder;
 }
+#endif
 
 namespace Collaboration {
 
-class AgoraClient:public ProtocolClient,public AgoraPipe
+class AgoraClient:public ProtocolClient,private AgoraProtocol
 	{
 	/* Embedded classes: */
 	protected:
@@ -81,7 +84,7 @@ class AgoraClient:public ProtocolClient,public AgoraPipe
 			{
 			/* Elements: */
 			public:
-			#if ALSUPPORT_CONFIG_HAVE_OPENAL
+			#if ALSUPPORT_CONFIG_HAVE_OPENAL && SOUND_CONFIG_HAVE_SPEEX
 			SpeexDecoder speexDecoder; // SPEEX decoder object
 			ALuint source; // Source to play back the remote client's audio transmission
 			ALuint* buffers; // Buffers to stream the remote client's audio transmission into the source
@@ -136,8 +139,10 @@ class AgoraClient:public ProtocolClient,public AgoraPipe
 	private:
 	
 	/* Audio encoding state: */
+	#if SOUND_CONFIG_HAVE_SPEEX
 	SpeexEncoder* speexEncoder; // SPEEX audio encoder object to send local audio to all remote clients
 	bool pauseAudio; // Flag to temporarily pause audio transmission
+	#endif
 	
 	/* Video encoding state: */
 	bool hasTheora; // Flag if the server thinks this client will send video data
@@ -166,7 +171,9 @@ class AgoraClient:public ProtocolClient,public AgoraPipe
 	void videoCaptureCallback(const Video::FrameBuffer* frame); // Called when a new frame has arrived from the video capture device
 	void showVideoDeviceSettingsCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
 	#endif
+	#if SOUND_CONFIG_HAVE_SPEEX
 	void pauseAudioCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	#endif
 	#if VIDEO_CONFIG_HAVE_THEORA
 	void pauseVideoCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
 	void showLocalVideoWindowCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
@@ -181,16 +188,15 @@ class AgoraClient:public ProtocolClient,public AgoraPipe
 	
 	/* Methods from ProtocolClient: */
 	virtual const char* getName(void) const;
-	virtual unsigned int getNumMessages(void) const;
-	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
+	virtual void initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection);
 	virtual bool haveSettingsDialog(void) const;
 	virtual void buildSettingsDialog(GLMotif::RowColumn* settingsDialog);
-	virtual void sendConnectRequest(CollaborationPipe& pipe);
-	virtual void receiveConnectReply(CollaborationPipe& pipe);
-	virtual void receiveConnectReject(CollaborationPipe& pipe);
-	virtual void sendClientUpdate(CollaborationPipe& pipe);
-	virtual RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
-	virtual void receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);
+	virtual void sendConnectRequest(Comm::NetPipe& pipe);
+	virtual void receiveConnectReply(Comm::NetPipe& pipe);
+	virtual void receiveConnectReject(Comm::NetPipe& pipe);
+	virtual RemoteClientState* receiveClientConnect(Comm::NetPipe& pipe);
+	virtual bool receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe);
+	virtual void sendClientUpdate(Comm::NetPipe& pipe);
 	virtual void frame(void);
 	virtual void frame(ProtocolClient::RemoteClientState* rcs);
 	virtual void glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;

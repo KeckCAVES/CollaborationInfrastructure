@@ -1,7 +1,7 @@
 /***********************************************************************
 GrapheinServer - Server object to implement the Graphein shared
 annotation protocol.
-Copyright (c) 2009 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -23,10 +23,8 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <Collaboration/GrapheinServer.h>
 
-#include <iostream>
 #include <Misc/ThrowStdErr.h>
-
-#include <Collaboration/CollaborationPipe.h>
+#include <Comm/NetPipe.h>
 
 namespace Collaboration {
 
@@ -35,14 +33,14 @@ Methods of class GrapheinServer::ClientState:
 ********************************************/
 
 GrapheinServer::ClientState::ClientState(void)
-	:curves(101)
+	:curves(17)
 	{
 	}
 
 GrapheinServer::ClientState::~ClientState(void)
 	{
-	/* Delete all curves in the hash table: */
-	for(CurveHasher::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
+	/* Delete all curves in the curve map: */
+	for(CurveMap::Iterator cIt=curves.begin();!cIt.isFinished();++cIt)
 		delete cIt->getDest();
 	}
 
@@ -68,26 +66,32 @@ unsigned int GrapheinServer::getNumMessages(void) const
 	return MESSAGES_END;
 	}
 
-ProtocolServer::ClientState* GrapheinServer::receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe)
+ProtocolServer::ClientState* GrapheinServer::receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe)
 	{
 	/* Check the protocol message length: */
-	if(protocolMessageLength!=sizeof(unsigned int))
+	if(protocolMessageLength!=sizeof(Card))
 		{
 		/* Fatal error; stop communicating with client entirely: */
-		Misc::throwStdErr("GrapheinServer::receiveConnectRequest: Protocol error; received %u bytes instead of %u",(unsigned int)protocolMessageLength,(unsigned int)sizeof(unsigned int));
+		Misc::throwStdErr("GrapheinServer::receiveConnectRequest: Protocol error; received %u bytes instead of %u",(unsigned int)protocolMessageLength,(unsigned int)sizeof(Card));
 		}
 	
 	/* Receive the client's protocol version: */
-	unsigned int clientProtocolVersion=pipe.read<unsigned int>();
+	unsigned int clientProtocolVersion=pipe.read<Card>();
 	
 	/* Check for the correct version number: */
 	if(clientProtocolVersion==protocolVersion)
-		return new ClientState;
+		{
+		/* Create the new client state object and set its message buffer's endianness: */
+		ClientState* result=new ClientState;
+		result->messageBuffer.setSwapOnWrite(pipe.mustSwapOnWrite());
+		
+		return result;
+		}
 	else
 		return 0;
 	}
 
-void GrapheinServer::receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void GrapheinServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the Graphein state object: */
 	ClientState* myCs=dynamic_cast<ClientState*>(cs);
@@ -95,24 +99,26 @@ void GrapheinServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabo
 		Misc::throwStdErr("GrapheinServer::receiveClientUpdate: Client state object has mismatching type");
 	
 	/* Receive a list of curve action messages from the client: */
-	CollaborationPipe::MessageIdType message;
-	while((message=pipe.readMessage())!=UPDATE_END)
+	MessageIdType message;
+	while((message=readMessage(pipe))!=UPDATE_END)
 		switch(message)
 			{
 			case ADD_CURVE:
 				{
 				/* Read the new curve's ID: */
-				unsigned int newCurveId=pipe.read<unsigned int>();
+				unsigned int newCurveId=pipe.read<Card>();
 				
-				/* Create a new curve object and add it to the client state's set: */
+				/* Create a new curve object and add it to the client's curve map: */
 				Curve* newCurve=new Curve;
-				myCs->curves.setEntry(CurveHasher::Entry(newCurveId,newCurve));
+				myCs->curves.setEntry(CurveMap::Entry(newCurveId,newCurve));
 				
-				/* Receive the new curve from the pipe: */
-				readCurve(pipe,*newCurve);
+				/* Read the new curve's state from the pipe: */
+				newCurve->read(pipe);
 				
-				/* Enqueue a curve action: */
-				myCs->actions.push_back(CurveAction(ADD_CURVE,myCs->curves.findEntry(newCurveId)));
+				/* Append a curve creation message to the client's outgoing buffer: */
+				writeMessage(ADD_CURVE,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(newCurveId);
+				newCurve->write(myCs->messageBuffer);
 				
 				break;
 				}
@@ -120,14 +126,21 @@ void GrapheinServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabo
 			case APPEND_POINT:
 				{
 				/* Read the affected curve's ID: */
-				unsigned int curveId=pipe.read<unsigned int>();
+				unsigned int curveId=pipe.read<Card>();
 				
 				/* Read the new vertex position: */
-				Point newVertex;
-				pipe.read<Scalar>(newVertex.getComponents(),3);
+				Point newVertex=read<Point>(pipe);
 				
-				/* Enqueue a curve action: */
-				myCs->actions.push_back(CurveAction(APPEND_POINT,myCs->curves.findEntry(curveId),newVertex));
+				/* Append the new vertex to the curve: */
+				Curve* curve=myCs->curves.getEntry(curveId).getDest();
+				unsigned int vertexIndex=curve->vertices.size();
+				curve->vertices.push_back(newVertex);
+				
+				/* Append a vertex addition message to the client's outgoing buffer: */
+				writeMessage(APPEND_POINT,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(curveId);
+				myCs->messageBuffer.write<Card>(vertexIndex);
+				write(newVertex,myCs->messageBuffer);
 				
 				break;
 				}
@@ -135,28 +148,43 @@ void GrapheinServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collabo
 			case DELETE_CURVE:
 				{
 				/* Read the affected curve's ID: */
-				unsigned int curveId=pipe.read<unsigned int>();
+				unsigned int curveId=pipe.read<Card>();
 				
-				/* Enqueue a curve action: */
-				myCs->actions.push_back(CurveAction(DELETE_CURVE,myCs->curves.findEntry(curveId)));
+				/* Erase the curve from the client's curve map: */
+				CurveMap::Iterator cIt=myCs->curves.findEntry(curveId);
+				if(!cIt.isFinished())
+					{
+					/* Delete the curve: */
+					delete cIt->getDest();
+					myCs->curves.removeEntry(cIt);
+					}
+				
+				/* Append a curve destruction message to the client's outgoing buffer: */
+				writeMessage(DELETE_CURVE,myCs->messageBuffer);
+				myCs->messageBuffer.write<Card>(curveId);
 				
 				break;
 				}
 			
 			case DELETE_ALL_CURVES:
 				{
-				/* Enqueue a curve action: */
-				myCs->actions.push_back(CurveAction(DELETE_ALL_CURVES));
+				/* Delete all curves in the client's curve map: */
+				for(CurveMap::Iterator cIt=myCs->curves.begin();!cIt.isFinished();++cIt)
+					delete cIt->getDest();
+				myCs->curves.clear();
+				
+				/* Append a curve set destruction message to the client's outgoing buffer: */
+				writeMessage(DELETE_ALL_CURVES,myCs->messageBuffer);
 				
 				break;
 				}
 			
 			default:
-				Misc::throwStdErr("GrapheinServer::receiveClientUpdate: received unknown locator action message %u",message);
+				Misc::throwStdErr("GrapheinServer::receiveClientUpdate: received unknown message %u",message);
 			}
 	}
 
-void GrapheinServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void GrapheinServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	/* Get handles on the Graphein state objects: */
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
@@ -166,18 +194,18 @@ void GrapheinServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Pro
 	
 	/* Send all curves currently owned by the source client to the destination client: */
 	unsigned int numCurves=mySourceCs->curves.getNumEntries();
-	pipe.write<unsigned int>(numCurves);
-	for(CurveHasher::Iterator cIt=mySourceCs->curves.begin();!cIt.isFinished();++cIt)
+	pipe.write<Card>(numCurves);
+	for(CurveMap::Iterator cIt=mySourceCs->curves.begin();!cIt.isFinished();++cIt)
 		{
 		/* Send the curve's ID: */
-		pipe.write<unsigned int>(cIt->getSource());
+		pipe.write<Card>(cIt->getSource());
 		
 		/* Send the curve itself: */
-		writeCurve(pipe,*(cIt->getDest()));
+		cIt->getDest()->write(pipe);
 		}
 	}
 
-void GrapheinServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void GrapheinServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	/* Get handles on the Graphein state objects: */
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
@@ -185,57 +213,16 @@ void GrapheinServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Prot
 	if(mySourceCs==0||myDestCs==0)
 		Misc::throwStdErr("GrapheinServer::sendServerUpdate: Client state object has mismatching type");
 	
-	/* Send the source client's curve action list to the destination client: */
-	for(CurveActionList::const_iterator aIt=mySourceCs->actions.begin();aIt!=mySourceCs->actions.end();++aIt)
-		{
-		switch(aIt->action)
-			{
-			case ADD_CURVE:
-				/* Send a creation message: */
-				pipe.writeMessage(ADD_CURVE);
-				
-				/* Send the new curve's ID: */
-				pipe.write<unsigned int>(aIt->curveIt->getSource());
-				
-				/* Send the new curve: */
-				writeCurve(pipe,*(aIt->curveIt->getDest()));
-				
-				break;
-			
-			case APPEND_POINT:
-				/* Send an append message: */
-				pipe.writeMessage(APPEND_POINT);
-				
-				/* Send the affected curve's ID: */
-				pipe.write<unsigned int>(aIt->curveIt->getSource());
-				
-				/* Send the new vertex: */
-				pipe.write<Scalar>(aIt->newVertex.getComponents(),3);
-				
-				break;
-			
-			case DELETE_CURVE:
-				/* Send a delete message: */
-				pipe.writeMessage(DELETE_CURVE);
-				
-				/* Send the affected curve's ID: */
-				pipe.write<unsigned int>(aIt->curveIt->getSource());
-				
-				break;
-			
-			case DELETE_ALL_CURVES:
-				/* Send a delete message: */
-				pipe.writeMessage(DELETE_ALL_CURVES);
-				
-				break;
-			
-			default:
-				; // Just to make g++ happy
-			}
-		}
+	/*********************************************************************
+	Send the source client's accumulated state tracking messages to the
+	destination client:
+	*********************************************************************/
 	
-	/* Terminate the action list: */
-	pipe.writeMessage(UPDATE_END);
+	/* Send the total size of the message first: */
+	pipe.write<Card>(mySourceCs->messageBuffer.getDataSize());
+	
+	/* Write the message itself: */
+	mySourceCs->messageBuffer.writeToSink(pipe);
 	}
 
 void GrapheinServer::afterServerUpdate(ProtocolServer::ClientState* cs)
@@ -245,37 +232,8 @@ void GrapheinServer::afterServerUpdate(ProtocolServer::ClientState* cs)
 	if(myCs==0)
 		Misc::throwStdErr("GrapheinServer::afterServerUpdate: Mismatching client state object type");
 	
-	/* Apply all actions to the client's curve set: */
-	for(CurveActionList::const_iterator aIt=myCs->actions.begin();aIt!=myCs->actions.end();++aIt)
-		switch(aIt->action)
-			{
-			case APPEND_POINT:
-				/* Append a new vertex to the curve: */
-				aIt->curveIt->getDest()->vertices.push_back(aIt->newVertex);
-				
-				break;
-			
-			case DELETE_CURVE:
-				/* Delete the curve: */
-				delete aIt->curveIt->getDest();
-				myCs->curves.removeEntry(aIt->curveIt);
-				
-				break;
-			
-			case DELETE_ALL_CURVES:
-				{
-				/* Delete all curves: */
-				for(CurveHasher::Iterator cIt=myCs->curves.begin();!cIt.isFinished();++cIt)
-					delete cIt->getDest();
-				
-				myCs->curves.clear();
-				
-				break;
-				}
-			}
-	
-	/* Clear the action list: */
-	myCs->actions.clear();
+	/* Clear the client's message buffer: */
+	myCs->messageBuffer.clear();
 	}
 
 }

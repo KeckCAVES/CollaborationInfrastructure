@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaClient - Client object to implement the Cheria input device
 distribution protocol.
-Copyright (c) 2010 Oliver Kreylos
+Copyright (c) 2010-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,7 +21,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#define DEBUGGING 1
+#define DEBUGGING 0
 
 #include <Collaboration/CheriaClient.h>
 
@@ -30,15 +30,33 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #endif
 #include <Misc/ThrowStdErr.h>
-#include <Misc/ReadBuffer.h>
-#include <Misc/StringMarshaller.h>
-#include <Geometry/OrthogonalTransformation.h>
+#include <IO/FixedMemoryFile.h>
+#include <Comm/NetPipe.h>
 #include <Vrui/Vrui.h>
 #include <Vrui/InputDevice.h>
 #include <Vrui/InputGraphManager.h>
 #include <Vrui/PointingTool.h>
+#include <Collaboration/CollaborationClient.h>
 
 namespace Collaboration {
+
+/*******************************************************************
+Methods of class CheriaClient::RemoteClientState::RemoteDeviceState:
+*******************************************************************/
+
+CheriaClient::RemoteClientState::RemoteDeviceState::RemoteDeviceState(IO::File& source)
+	:DeviceState(source),
+	 device(Vrui::getInputDeviceManager()->createInputDevice("CheriaRemoteDevice",trackType,numButtons,numValuators))
+	{
+	/* Permanently grab the device: */
+	Vrui::getInputGraphManager()->grabInputDevice(device,0);
+	}
+
+CheriaClient::RemoteClientState::RemoteDeviceState::~RemoteDeviceState(void)
+	{
+	Vrui::getInputGraphManager()->releaseInputDevice(device,0);
+	Vrui::getInputDeviceManager()->destroyInputDevice(device);
+	}
 
 /************************************************
 Methods of class CheriaClient::RemoteClientState:
@@ -52,73 +70,63 @@ CheriaClient::RemoteClientState::RemoteClientState(CheriaClient& sClient)
 
 CheriaClient::RemoteClientState::~RemoteClientState(void)
 	{
-	{
-	/* Lock the client's remote device state: */
-	Threads::Mutex::Lock remoteDevicesLock(client.remoteDevicesMutex);
-	
 	/* Destroy all remote devices (which automatically destroys all remote tools): */
+	client.remoteClientDestroyingDevice=true;
 	for(RemoteDeviceMap::Iterator rdIt=remoteDevices.begin();!rdIt.isFinished();++rdIt)
-		{
-		/* Destroy the device: */
-		client.remoteClientDestroyingDevice=true;
-		Vrui::getInputGraphManager()->releaseInputDevice(rdIt->getDest(),0);
-		Vrui::getInputDeviceManager()->destroyInputDevice(rdIt->getDest());
-		client.remoteClientDestroyingDevice=false;
-		}
-	}
+		delete rdIt->getDest();
+	client.remoteClientDestroyingDevice=false;
 	
 	/* Delete any leftover message buffers: */
 	{
 	Threads::Mutex::Lock messageBufferLock(messageBufferMutex);
-	for(std::vector<Misc::ReadBuffer*>::iterator mbIt=messageBuffers.begin();mbIt!=messageBuffers.end();++mbIt)
-		delete *mbIt;
+	for(std::vector<IncomingMessage*>::iterator mIt=messages.begin();mIt!=messages.end();++mIt)
+		delete *mIt;
 	}
 	}
 
 void CheriaClient::RemoteClientState::processMessages(void)
 	{
-	/* Lock the client's remote device state and this remote client's message buffer list: */
-	Threads::Mutex::Lock remoteDevicesLock(client.remoteDevicesMutex);
 	Threads::Mutex::Lock messageBufferLock(messageBufferMutex);
 	
-	/* Handle all state tracking messages and only the final device state dump: */
-	for(std::vector<Misc::ReadBuffer*>::iterator mbIt=messageBuffers.begin();mbIt!=messageBuffers.end();++mbIt)
+	/* Handle all state tracking and device state update messages: */
+	for(std::vector<IncomingMessage*>::iterator mIt=messages.begin();mIt!=messages.end();++mIt)
 		{
 		/* Process all messages in this buffer: */
-		Misc::ReadBuffer& pipe=**mbIt;
-		bool goOn=true;
-		while(goOn)
+		IO::File& msg=**mIt;
+		while(!msg.eof())
 			{
 			/* Read the next message: */
-			MessageIdType message=pipe.read<MessageIdType>();
-			switch(message)
+			switch(CheriaProtocol::readMessage(msg))
 				{
 				case CREATE_DEVICE:
 					{
 					/* Read the new device's ID: */
-					unsigned int newDeviceId=pipe.read<unsigned int>();
+					unsigned int newDeviceId=msg.read<Card>();
 					
-					/* Read the new device's layout: */
-					int trackType=pipe.read<int>();
-					int numButtons=pipe.read<int>();
-					int numValuators=pipe.read<int>();
-					
-					/* Create a new input device: */
-					client.remoteClientCreatingDevice=true;
-					Vrui::InputDevice* newDevice=Vrui::getInputDeviceManager()->createInputDevice("CheriaRemoteDevice",trackType,numButtons,numValuators);
-					Vrui::getInputGraphManager()->grabInputDevice(newDevice,0);
-					client.remoteClientCreatingDevice=false;
-					
-					/* Set the new device's glyph: */
-					Vrui::Glyph& deviceGlyph=Vrui::getInputGraphManager()->getInputDeviceGlyph(newDevice);
-					deviceGlyph=client.inputDeviceGlyph;
-					
-					#if DEBUGGING
-					std::cout<<"Creating remote device "<<newDevice<<" with remote ID "<<newDeviceId<<std::endl;
-					#endif
-					
-					/* Add the new device to the remote device map: */
-					remoteDevices.setEntry(RemoteDeviceMap::Entry(newDeviceId,newDevice));
+					/* Check if the device already exists: */
+					if(remoteDevices.isEntry(newDeviceId))
+						{
+						/* Skip the new device's layout: */
+						DeviceState::skipLayout(msg);
+						}
+					else
+						{
+						/* Create a new remote device structure: */
+						client.remoteClientCreatingDevice=true;
+						RemoteDeviceState* newRemoteDevice=new RemoteDeviceState(msg);
+						client.remoteClientCreatingDevice=false;
+						
+						/* Set the new device's glyph: */
+						Vrui::Glyph& deviceGlyph=Vrui::getInputGraphManager()->getInputDeviceGlyph(newRemoteDevice->device);
+						deviceGlyph=client.inputDeviceGlyph;
+						
+						#if DEBUGGING
+						std::cout<<"Creating remote device "<<newRemoteDevice->device<<" with remote ID "<<newDeviceId<<std::endl;
+						#endif
+						
+						/* Add the new device to the remote device map: */
+						remoteDevices[newDeviceId]=newRemoteDevice;
+						}
 					
 					break;
 					}
@@ -126,7 +134,7 @@ void CheriaClient::RemoteClientState::processMessages(void)
 				case DESTROY_DEVICE:
 					{
 					/* Read the device's ID: */
-					unsigned int deviceId=pipe.read<unsigned int>();
+					unsigned int deviceId=msg.read<Card>();
 					
 					/* Erase the device from the remote device map: */
 					RemoteDeviceMap::Iterator rdIt=remoteDevices.findEntry(deviceId);
@@ -134,8 +142,7 @@ void CheriaClient::RemoteClientState::processMessages(void)
 						{
 						/* Destroy the device: */
 						client.remoteClientDestroyingDevice=true;
-						Vrui::getInputGraphManager()->releaseInputDevice(rdIt->getDest(),0);
-						Vrui::getInputDeviceManager()->destroyInputDevice(rdIt->getDest());
+						delete rdIt->getDest();
 						client.remoteClientDestroyingDevice=false;
 						
 						/* Remove the device from the remote device map: */
@@ -148,101 +155,91 @@ void CheriaClient::RemoteClientState::processMessages(void)
 				case CREATE_TOOL:
 					{
 					/* Read the new tool's ID: */
-					unsigned int newToolId=pipe.read<unsigned int>();
+					unsigned int newToolId=msg.read<Card>();
 					
-					/* Read the tool's class name: */
-					char* className=Misc::readCString(pipe);
-					
-					/* Find the tool's factory object: */
-					Vrui::ToolFactory* factory=0;
-					try
+					/* Check if the tool already exists: */
+					if(remoteTools.isEntry(newToolId))
 						{
-						factory=Vrui::getToolManager()->loadClass(className);
+						/* Skip the new tool's class name and input assignment: */
+						ToolState::skip(msg);
+						}
+					else
+						{
+						/* Read the tool's class name and input layout and assignment: */
+						ToolState ts(msg);
 						
-						/* Get the tool factory's layout and create an input assignment: */
-						const Vrui::ToolInputLayout& til=factory->getLayout();
-						Vrui::ToolInputAssignment tia(til);
-						
-						/* Read the tool's input assignment and ensure that the layouts match: */
-						bool matches=true;
-						
-						/* Read all button slots: */
-						int numButtonSlots=pipe.read<int>();
-						matches=matches&&(numButtonSlots==til.getNumButtons()||(til.hasOptionalButtons()&&numButtonSlots>til.getNumButtons()));
-						for(int buttonSlotIndex=0;buttonSlotIndex<numButtonSlots;++buttonSlotIndex)
+						/* Find the tool's factory object: */
+						Vrui::ToolFactory* factory=0;
+						try
 							{
-							/* Read the slot's device ID and device slot index: */
-							unsigned int deviceId=pipe.read<unsigned int>();
-							Vrui::InputDevice* device=remoteDevices.getEntry(deviceId).getDest();
-							int slotIndex=pipe.read<int>();
+							factory=Vrui::getToolManager()->loadClass(ts.className.c_str());
+							
+							/* Get the tool factory's layout and create an input assignment: */
+							const Vrui::ToolInputLayout& til=factory->getLayout();
+							Vrui::ToolInputAssignment tia(til);
+							
+							/* Read the tool's input assignment and ensure that the layouts match: */
+							bool matches=true;
+							matches=matches&&(int(ts.numButtonSlots)==til.getNumButtons()||(til.hasOptionalButtons()&&int(ts.numButtonSlots)>til.getNumButtons()));
+							matches=matches&&(int(ts.numValuatorSlots)==til.getNumValuators()||(til.hasOptionalValuators()&&int(ts.numValuatorSlots)>til.getNumValuators()));
 							
 							if(matches)
 								{
-								/* Assign the slot: */
-								if(buttonSlotIndex<til.getNumButtons())
-									tia.setButtonSlot(buttonSlotIndex,device,slotIndex);
-								else
-									tia.addButtonSlot(device,slotIndex);
-								}
-							}
-						
-						/* Read all valuator slots: */
-						int numValuatorSlots=pipe.read<int>();
-						matches=matches&&(numValuatorSlots==til.getNumValuators()||(til.hasOptionalValuators()&&numValuatorSlots>til.getNumValuators()));
-						for(int valuatorSlotIndex=0;valuatorSlotIndex<numValuatorSlots;++valuatorSlotIndex)
-							{
-							/* Read the slot's device ID and device slot index: */
-							unsigned int deviceId=pipe.read<unsigned int>();
-							Vrui::InputDevice* device=remoteDevices.getEntry(deviceId).getDest();
-							int slotIndex=pipe.read<int>();
-							
-							if(matches)
-								{
-								/* Assign the slot: */
-								if(valuatorSlotIndex<til.getNumValuators())
-									tia.setValuatorSlot(valuatorSlotIndex,device,slotIndex);
-								else
-									tia.addValuatorSlot(device,slotIndex);
-								}
-							}
-						
-						if(matches)
-							{
-							/* Create the tool: */
-							client.remoteClientCreatingTool=true;
-							Vrui::Tool* newTool=Vrui::getToolManager()->createTool(factory,tia);
-							client.remoteClientCreatingTool=false;
-							
-							/* Check if the new tool is a pointing tool: */
-							Vrui::PointingTool* pointingTool=dynamic_cast<Vrui::PointingTool*>(newTool);
-							if(pointingTool!=0)
-								{
-								/* Add the new tool to the remote tool map: */
-								remoteTools.setEntry(RemoteToolMap::Entry(newToolId,pointingTool));
+								/* Assign all button slots: */
+								for(unsigned int buttonSlotIndex=0;buttonSlotIndex<ts.numButtonSlots;++buttonSlotIndex)
+									{
+									/* Assign the slot: */
+									Vrui::InputDevice* slotDevice=remoteDevices.getEntry(ts.buttonSlots[buttonSlotIndex].deviceId).getDest()->device;
+									if(int(buttonSlotIndex)<til.getNumButtons())
+										tia.setButtonSlot(buttonSlotIndex,slotDevice,ts.buttonSlots[buttonSlotIndex].index);
+									else
+										tia.addButtonSlot(slotDevice,ts.buttonSlots[buttonSlotIndex].index);
+									}
 								
-								#if DEBUGGING
-								std::cout<<"Created tool of class "<<className<<std::endl;
-								#endif
-								}
-							else
-								{
-								/* Destroy the tool again: */
-								client.remoteClientDestroyingTool=true;
-								Vrui::getToolManager()->destroyTool(newTool);
-								client.remoteClientDestroyingTool=false;
+								/* Assign all valuator slots: */
+								for(unsigned int valuatorSlotIndex=0;valuatorSlotIndex<ts.numValuatorSlots;++valuatorSlotIndex)
+									{
+									/* Assign the slot: */
+									Vrui::InputDevice* slotDevice=remoteDevices.getEntry(ts.valuatorSlots[valuatorSlotIndex].deviceId).getDest()->device;
+									if(int(valuatorSlotIndex)<til.getNumValuators())
+										tia.setValuatorSlot(valuatorSlotIndex,slotDevice,ts.valuatorSlots[valuatorSlotIndex].index);
+									else
+										tia.addValuatorSlot(slotDevice,ts.valuatorSlots[valuatorSlotIndex].index);
+									}
+								
+								/* Create the tool: */
+								client.remoteClientCreatingTool=true;
+								Vrui::Tool* newTool=Vrui::getToolManager()->createTool(factory,tia);
+								client.remoteClientCreatingTool=false;
+								
+								/* Check if the new tool is a pointing tool: */
+								Vrui::PointingTool* pointingTool=dynamic_cast<Vrui::PointingTool*>(newTool);
+								if(pointingTool!=0)
+									{
+									/* Add the new tool to the remote tool map: */
+									remoteTools[newToolId]=pointingTool;
+									
+									#if DEBUGGING
+									std::cout<<"Created tool of class "<<className<<std::endl;
+									#endif
+									}
+								else
+									{
+									/* Destroy the tool again: */
+									client.remoteClientDestroyingTool=true;
+									Vrui::getToolManager()->destroyTool(newTool);
+									client.remoteClientDestroyingTool=false;
+									}
 								}
 							}
+						catch(std::runtime_error err)
+							{
+							/* Ignore the error, and the tool */
+							#if DEBUGGING
+							std::cout<<"Tool creation of class "<<className<<" failed due to "<<err.what()<<std::endl;
+							#endif
+							}
 						}
-					catch(std::runtime_error err)
-						{
-						/* Ignore the error, and the tool */
-						#if DEBUGGING
-						std::cout<<"Tool creation of class "<<className<<" failed due to "<<err.what()<<std::endl;
-						#endif
-						}
-					
-					/* Clean up: */
-					delete[] className;
 					
 					break;
 					}
@@ -250,7 +247,7 @@ void CheriaClient::RemoteClientState::processMessages(void)
 				case DESTROY_TOOL:
 					{
 					/* Read the tool's ID: */
-					unsigned int toolId=pipe.read<unsigned int>();
+					unsigned int toolId=msg.read<Card>();
 					
 					/* Erase the tool from the remote tool map: */
 					RemoteToolMap::Iterator rtIt=remoteTools.findEntry(toolId);
@@ -270,72 +267,25 @@ void CheriaClient::RemoteClientState::processMessages(void)
 				
 				case DEVICE_STATES:
 					{
-					/* Check if this is the last queued message buffer: */
-					std::vector<Misc::ReadBuffer*>::iterator next=mbIt;
-					++next;
-					if(next==messageBuffers.end())
+					/* Read all contained status messages: */
+					unsigned int deviceId;
+					while((deviceId=msg.read<Card>())!=0)
 						{
-						/* Get the navigation transformation: */
-						OGTransform nav=Vrui::getNavigationTransformation();
-						
-						/* Read status messages for each device: */
-						for(size_t i=0;i<remoteDevices.getNumEntries();++i)
-							{
-							/* Read the device ID: */
-							unsigned int deviceId=pipe.read<unsigned int>();
-							
-							/* Get the device: */
-							Vrui::InputDevice* device=remoteDevices.getEntry(deviceId).getDest();
-							
-							/* Read the device's position and orientation: */
-							Vector translation;
-							pipe.read<Scalar>(translation.getComponents(),3);
-							Scalar quaternion[4];
-							pipe.read<Scalar>(quaternion,4);
-							Scalar scaling=pipe.read<Scalar>();
-							OGTransform transform=nav;
-							transform*=OGTransform(translation,OGTransform::Rotation::fromQuaternion(quaternion),scaling);
-							device->setTransformation(Vrui::TrackerState(transform.getTranslation(),transform.getRotation()));
-							
-							/* Read the device's ray direction: */
-							Vector rayDirection;
-							pipe.read<Scalar>(rayDirection.getComponents(),3);
-							device->setDeviceRayDirection(rayDirection);
-							
-							/* Read the device's button states: */
-							unsigned char bitMask=0x0;
-							int numBits=0;
-							for(int i=0;i<device->getNumButtons();++i)
-								{
-								if(numBits==0)
-									{
-									pipe.read<unsigned char>(bitMask);
-									numBits=8;
-									}
-								device->setButtonState(i,bitMask&0x1);
-								bitMask>>=1;
-								--numBits;
-								}
-							
-							/* Read the device's valuator states: */
-							for(int i=0;i<device->getNumValuators();++i)
-								device->setValuator(i,pipe.read<Scalar>());
-							}
+						/* Update the device state: */
+						remoteDevices.getEntry(deviceId).getDest()->read(msg);
 						}
 					
-					/* This is the last message: */
-					goOn=false;
 					break;
 					}
 				}
 			}
 		
-		/* Destroy the just read message buffer: */
-		delete *mbIt;
+		/* Destroy the just-read message buffer: */
+		delete *mIt;
 		}
 	
 	/* Clear the message buffer list: */
-	messageBuffers.clear();
+	messages.clear();
 	}
 
 /***********************************************
@@ -343,14 +293,15 @@ Methods of class CheriaClient::LocalDeviceState:
 ***********************************************/
 
 CheriaClient::LocalDeviceState::LocalDeviceState(unsigned int sDeviceId,const Vrui::InputDevice* device)
-	:deviceId(sDeviceId),
-	 buttonMasks(new bool[device->getNumButtons()]),valuatorMasks(new bool[device->getNumValuators()])
+	:DeviceState(device->getTrackType(),device->getNumButtons(),device->getNumValuators()),
+	 deviceId(sDeviceId),
+	 buttonMasks(numButtons>0?new Byte[(numButtons+7)/8]:0),valuatorMasks(numValuators>0?new Byte[(numValuators+7)/8]:0)
 	{
 	/* Initialize the mask arrays to false: */
-	for(int i=0;i<device->getNumButtons();++i)
-		buttonMasks[i]=false;
-	for(int i=0;i<device->getNumValuators();++i)
-		valuatorMasks[i]=false;
+	for(unsigned int i=0;i<(numButtons+7)/8;++i)
+		buttonMasks[i]=0x0U;
+	for(unsigned int i=0;i<(numValuators+7)/8;++i)
+		valuatorMasks[i]=0x0U;
 	}
 
 CheriaClient::LocalDeviceState::~LocalDeviceState(void)
@@ -373,24 +324,23 @@ void CheriaClient::createInputDevice(Vrui::InputDevice* device)
 	LocalDeviceState* lds=new LocalDeviceState(nextLocalDeviceId,device);
 	
 	/* Add the new input device to the local device map: */
-	localDevices.setEntry(LocalDeviceMap::Entry(device,lds));
+	localDevices[device]=lds;
 	
 	/**************************************************************
 	Write an input device creation message into the message buffer:
 	**************************************************************/
 	
 	/* Write the message ID: */
-	messageBuffer.write<MessageIdType>(CREATE_DEVICE);
+	writeMessage(CREATE_DEVICE,message);
 	
 	/* Write the new input device's ID: */
-	messageBuffer.write<unsigned int>(nextLocalDeviceId);
+	message.write<Card>(nextLocalDeviceId);
 	
 	/* Write the new input device's layout: */
-	messageBuffer.write<int>(device->getTrackType());
-	messageBuffer.write<int>(device->getNumButtons());
-	messageBuffer.write<int>(device->getNumValuators());
+	lds->writeLayout(message);
 	
-	++nextLocalDeviceId;
+	if(++nextLocalDeviceId==0)
+		++nextLocalDeviceId;
 	}
 
 void CheriaClient::createTool(Vrui::PointingTool* tool)
@@ -400,60 +350,53 @@ void CheriaClient::createTool(Vrui::PointingTool* tool)
 	#endif
 	
 	/* Add the new tool to the local tool map: */
-	localTools.setEntry(LocalToolMap::Entry(tool,nextLocalToolId));
+	localTools[tool]=nextLocalToolId;
 	
 	/*****************************************************
 	Write a tool creation message into the message buffer:
 	*****************************************************/
 	
 	/* Write the message ID: */
-	messageBuffer.write<MessageIdType>(CREATE_TOOL);
+	writeMessage(CREATE_TOOL,message);
 	
 	/* Write the new tool's ID: */
-	messageBuffer.write<unsigned int>(nextLocalToolId);
+	message.write<Card>(nextLocalToolId);
 	
-	/* Write the tool's class name: */
-	Misc::writeCString(tool->getFactory()->getClassName(),messageBuffer);
-	
+	/* Create a tool state structure: */
 	const Vrui::ToolInputAssignment& tia=tool->getInputAssignment();
+	ToolState ts(tool->getFactory()->getClassName(),tia.getNumButtonSlots(),tia.getNumValuatorSlots());
 	
-	/* Write and enable the tool's button slots: */
-	messageBuffer.write<int>(tia.getNumButtonSlots());
-	for(int buttonSlotIndex=0;buttonSlotIndex<tia.getNumButtonSlots();++buttonSlotIndex)
+	/* Fill in the tool's button slot assignment: */
+	for(unsigned int buttonSlotIndex=0;buttonSlotIndex<ts.numButtonSlots;++buttonSlotIndex)
 		{
 		/* Get the slot's local device state structure: */
 		LocalDeviceState* lds=localDevices.getEntry(tia.getButtonSlot(buttonSlotIndex).device).getDest();
+		ts.buttonSlots[buttonSlotIndex].deviceId=lds->deviceId;
+		unsigned int index=tia.getButtonSlot(buttonSlotIndex).index;
+		ts.buttonSlots[buttonSlotIndex].index=index;
 		
-		/* Write the device's ID: */
-		messageBuffer.write<unsigned int>(lds->deviceId);
-		
-		/* Write the slot's button index: */
-		int index=tia.getButtonSlot(buttonSlotIndex).index;
-		messageBuffer.write<int>(index);
-		
-		/* Enable the slot's button on the device: */
-		lds->buttonMasks[index]=true;
+		/* Enable the slot's button on the device for further updates: */
+		lds->buttonMasks[index/8]|=0x1U<<(index%8);
 		}
 	
-	/* Write and enable the tool's valuator slots: */
-	messageBuffer.write<int>(tia.getNumValuatorSlots());
-	for(int valuatorSlotIndex=0;valuatorSlotIndex<tia.getNumValuatorSlots();++valuatorSlotIndex)
+	/* Fill in the tool's valuator slot assignment: */
+	for(unsigned int valuatorSlotIndex=0;valuatorSlotIndex<ts.numValuatorSlots;++valuatorSlotIndex)
 		{
 		/* Get the slot's local device state structure: */
 		LocalDeviceState* lds=localDevices.getEntry(tia.getValuatorSlot(valuatorSlotIndex).device).getDest();
+		ts.valuatorSlots[valuatorSlotIndex].deviceId=lds->deviceId;
+		unsigned int index=tia.getValuatorSlot(valuatorSlotIndex).index;
+		ts.valuatorSlots[valuatorSlotIndex].index=index;
 		
-		/* Write the device's ID: */
-		messageBuffer.write<unsigned int>(lds->deviceId);
-		
-		/* Write the slot's valuator index: */
-		int index=tia.getValuatorSlot(valuatorSlotIndex).index;
-		messageBuffer.write<int>(index);
-		
-		/* Enable the slot's valuator on the device: */
-		lds->valuatorMasks[index]=true;
+		/* Enable the slot's valuator on the device for further updates: */
+		lds->valuatorMasks[index/8]|=0x1U<<(index%8);
 		}
 	
-	++nextLocalToolId;
+	/* Write the tool state structure into the message buffer: */
+	ts.write(message);
+	
+	if(++nextLocalToolId==0)
+		++nextLocalToolId;
 	}
 
 void CheriaClient::inputDeviceCreationCallback(Vrui::InputDeviceManager::InputDeviceCreationCallbackData* cbData)
@@ -480,8 +423,8 @@ void CheriaClient::inputDeviceDestructionCallback(Vrui::InputDeviceManager::Inpu
 		if(!ldIt.isFinished())
 			{
 			/* Send a device destruction message: */
-			messageBuffer.write<MessageIdType>(DESTROY_DEVICE);
-			messageBuffer.write<unsigned int>(ldIt->getDest()->deviceId);
+			writeMessage(DESTROY_DEVICE,message);
+			message.write<Card>(ldIt->getDest()->deviceId);
 			
 			/* Destroy the device's local device state and remove the device: */
 			delete ldIt->getDest();
@@ -510,7 +453,7 @@ void CheriaClient::toolCreationCallback(Vrui::ToolManager::ToolCreationCallbackD
 void CheriaClient::toolDestructionCallback(Vrui::ToolManager::ToolDestructionCallbackData* cbData)
 	{
 	/* Ignore tools being destroyed by remote Cheria clients: */
-	if(!remoteClientDestroyingTool)
+	if(!(remoteClientDestroyingDevice||remoteClientDestroyingTool))
 		{
 		/* Check if the tool is a pointing tool: */
 		Vrui::PointingTool* pointingTool=dynamic_cast<Vrui::PointingTool*>(cbData->tool);
@@ -534,7 +477,8 @@ void CheriaClient::toolDestructionCallback(Vrui::ToolManager::ToolDestructionCal
 					LocalDeviceState* lds=localDevices.getEntry(tia.getButtonSlot(buttonSlotIndex).device).getDest();
 					
 					/* Disable the slot's button on the device: */
-					lds->buttonMasks[tia.getButtonSlot(buttonSlotIndex).index]=false;
+					unsigned int index=tia.getButtonSlot(buttonSlotIndex).index;
+					lds->buttonMasks[index/8]&=~(0x1U<<(index%8));
 					}
 				
 				/* Disable the tool's valuator slots: */
@@ -544,12 +488,13 @@ void CheriaClient::toolDestructionCallback(Vrui::ToolManager::ToolDestructionCal
 					LocalDeviceState* lds=localDevices.getEntry(tia.getValuatorSlot(valuatorSlotIndex).device).getDest();
 					
 					/* Disable the slot's valuator on the device: */
-					lds->valuatorMasks[tia.getValuatorSlot(valuatorSlotIndex).index]=false;
+					unsigned int index=tia.getValuatorSlot(valuatorSlotIndex).index;
+					lds->valuatorMasks[index/8]&=~(0x1U<<(index%8));
 					}
 				
 				/* Send a tool destruction message: */
-				messageBuffer.write<MessageIdType>(DESTROY_TOOL);
-				messageBuffer.write<unsigned int>(ltIt->getDest());
+				writeMessage(DESTROY_TOOL,message);
+				message.write<Card>(ltIt->getDest());
 				
 				/* Remove the tool: */
 				localTools.removeEntry(ltIt);
@@ -589,26 +534,29 @@ unsigned int CheriaClient::getNumMessages(void) const
 	return MESSAGES_END;
 	}
 
-void CheriaClient::initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection)
+void CheriaClient::initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection)
 	{
+	/* Call the base class method: */
+	ProtocolClient::initialize(sClient,configFileSection);
+	
 	/* Initialize and configure the remote input device glyph: */
 	inputDeviceGlyph.enable(Vrui::Glyph::CONE,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
 	inputDeviceGlyph.configure(configFileSection,"remoteInputDeviceGlyphType","remoteInputDeviceGlyphMaterial");
 	}
 
-void CheriaClient::sendConnectRequest(CollaborationPipe& pipe)
+void CheriaClient::sendConnectRequest(Comm::NetPipe& pipe)
 	{
 	/* Send the length of the following message: */
-	pipe.write<unsigned int>(sizeof(unsigned int));
+	pipe.write<Card>(sizeof(Card));
 	
 	/* Send the client's protocol version: */
-	pipe.write<unsigned int>(protocolVersion);
+	pipe.write<Card>(protocolVersion);
 	}
 
-void CheriaClient::receiveConnectReply(CollaborationPipe& pipe)
+void CheriaClient::receiveConnectReply(Comm::NetPipe& pipe)
 	{
 	/* Set the message buffer's endianness swapping behavior to that of the pipe: */
-	messageBuffer.setEndianness(pipe.mustSwapOnWrite());
+	message.setSwapOnWrite(pipe.mustSwapOnWrite());
 	
 	Vrui::InputDeviceManager* idm=Vrui::getInputDeviceManager();
 	Vrui::ToolManager* tm=Vrui::getToolManager();
@@ -644,7 +592,7 @@ void CheriaClient::receiveConnectReply(CollaborationPipe& pipe)
 	tm->getToolDestructionCallbacks().add(this,&CheriaClient::toolDestructionCallback);
 	}
 
-void CheriaClient::receiveDisconnectReply(CollaborationPipe& pipe)
+void CheriaClient::receiveDisconnectReply(Comm::NetPipe& pipe)
 	{
 	/* Unregister callbacks with the input device and tool managers: */
 	Vrui::getInputDeviceManager()->getInputDeviceCreationCallbacks().remove(this,&CheriaClient::inputDeviceCreationCallback);
@@ -653,97 +601,30 @@ void CheriaClient::receiveDisconnectReply(CollaborationPipe& pipe)
 	Vrui::getToolManager()->getToolDestructionCallbacks().remove(this,&CheriaClient::toolDestructionCallback);
 	}
 
-void CheriaClient::sendClientUpdate(CollaborationPipe& pipe)
-	{
-	{
-	Threads::Mutex::Lock localDevicesLock(localDevicesMutex);
-	
-	/* Send accumulated state tracking messages all at once and then clear the message buffer: */
-	messageBuffer.writeToSink(pipe);
-	messageBuffer.clear();
-	
-	/* Get the inverse navigation transformation: */
-	OGTransform invNav=Vrui::getInverseNavigationTransformation();
-	
-	/* Send the current state of all represented devices: */
-	pipe.writeMessage(DEVICE_STATES);
-	for(LocalDeviceMap::Iterator ldIt=localDevices.begin();!ldIt.isFinished();++ldIt)
-		{
-		/* Get the device: */
-		Vrui::InputDevice* device=ldIt->getSource();
-		
-		/* Get the device's local state structure: */
-		LocalDeviceState* lds=ldIt->getDest();
-		
-		/* Write the device's local ID: */
-		pipe.write<unsigned int>(lds->deviceId);
-		
-		/* Calculate the device's position and orientation in navigational space: */
-		OGTransform deviceTransform=invNav;
-		deviceTransform*=device->getTransformation();
-		
-		/* Write the device's position and orientation: */
-		pipe.write<Scalar>(deviceTransform.getTranslation().getComponents(),3);
-		pipe.write<Scalar>(deviceTransform.getRotation().getQuaternion(),4);
-		pipe.write<Scalar>(deviceTransform.getScaling());
-		
-		/* Write the device's ray direction: */
-		Vector rayDirection=Vector(device->getDeviceRayDirection());
-		pipe.write<Scalar>(rayDirection.getComponents(),3);
-		
-		/* Write the device's button states: */
-		unsigned char bitMask=0x0;
-		int bit=0x1;
-		for(int i=0;i<device->getNumButtons();++i)
-			{
-			/* Add the button state if the button is enabled: */
-			if(lds->buttonMasks[i]&&device->getButtonState(i))
-				bitMask|=bit;
-			bit<<=1;
-			if(bit==0x100)
-				{
-				pipe.write<unsigned char>(bitMask);
-				bitMask=0x0;
-				bit=0x1;
-				}
-			}
-		if(bit!=0x1)
-			pipe.write<unsigned char>(bitMask);
-		
-		/* Write the device's valuator states: */
-		for(int i=0;i<device->getNumValuators();++i)
-			{
-			/* Write the valuator's value if it is enabled, or zero otherwise: */
-			pipe.write<Scalar>(lds->valuatorMasks[i]?device->getValuator(i):Scalar(0));
-			}
-		}
-	
-	}
-	}
-
-ProtocolClient::RemoteClientState* CheriaClient::receiveClientConnect(CollaborationPipe& pipe)
+ProtocolClient::RemoteClientState* CheriaClient::receiveClientConnect(Comm::NetPipe& pipe)
 	{
 	/* Create a new remote client state object: */
 	RemoteClientState* newClientState=new RemoteClientState(*this);
 	
 	/* Read the size of the following message: */
-	unsigned int messageSize=pipe.read<unsigned int>();
+	unsigned int messageSize=pipe.read<Card>();
 	
 	#if DEBUGGING
 	std::cout<<"Received client connect message of size "<<messageSize<<std::endl;
 	#endif
 	
 	/* Read the entire message into a new read buffer that has the same endianness as the pipe's read end: */
-	Misc::ReadBuffer* buffer=new Misc::ReadBuffer(messageSize,pipe.mustSwapOnRead());
-	buffer->readFromSource(pipe);
+	IncomingMessage* msg=new IncomingMessage(messageSize);
+	msg->setSwapOnRead(pipe.mustSwapOnRead());
+	pipe.readRaw(msg->getMemory(),messageSize);
 	
 	/* Store the new buffer in the client's message list: */
-	newClientState->messageBuffers.push_back(buffer);
+	newClientState->messages.push_back(msg);
 	
 	return newClientState;
 	}
 
-void CheriaClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe)
+bool CheriaClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the remote client state object: */
 	RemoteClientState* myRcs=dynamic_cast<RemoteClientState*>(rcs);
@@ -751,17 +632,132 @@ void CheriaClient::receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Co
 		Misc::throwStdErr("CheriaClient::receiveServerUpdate: Mismatching remote client state object type");
 	
 	/* Read the size of the following message: */
-	unsigned int messageSize=pipe.read<unsigned int>();
+	unsigned int messageSize=pipe.read<Card>();
 	
-	/* Read the entire message into a new read buffer that has the same endianness as the pipe's read end: */
-	Misc::ReadBuffer* buffer=new Misc::ReadBuffer(messageSize,pipe.mustSwapOnRead());
-	buffer->readFromSource(pipe);
+	if(messageSize>0)
+		{
+		/* Read the entire message into a new read buffer that has the same endianness as the pipe's read end: */
+		IncomingMessage* msg=new IncomingMessage(messageSize);
+		msg->setSwapOnRead(pipe.mustSwapOnRead());
+		pipe.readRaw(msg->getMemory(),messageSize);
+		
+		/* Store the new buffer in the client's message list: */
+		{
+		Threads::Mutex::Lock messageBufferLock(myRcs->messageBufferMutex);
+		myRcs->messages.push_back(msg);
+		}
+		}
 	
-	/* Store the new buffer in the client's message list: */
-	{
-	Threads::Mutex::Lock messageBufferLock(myRcs->messageBufferMutex);
-	myRcs->messageBuffers.push_back(buffer);
+	return messageSize>sizeof(MessageIdType)+sizeof(Card);
 	}
+
+void CheriaClient::sendClientUpdate(Comm::NetPipe& pipe)
+	{
+	Threads::Mutex::Lock localDevicesLock(localDevicesMutex);
+	
+	/* Send accumulated state tracking messages all at once and then clear the message buffer: */
+	message.writeToSink(pipe);
+	message.clear();
+	
+	/* Send the current state of all local input devices: */
+	writeMessage(DEVICE_STATES,pipe);
+	for(LocalDeviceMap::Iterator ldIt=localDevices.begin();!ldIt.isFinished();++ldIt)
+		{
+		/* Get the device's local state structure: */
+		LocalDeviceState* lds=ldIt->getDest();
+		
+		/* Check if the device has changed since the last update: */
+		if(lds->updateMask!=DeviceState::NO_CHANGE)
+			{
+			/* Write the device's local ID: */
+			pipe.write<Card>(lds->deviceId);
+			
+			/* Write the device's state update: */
+			lds->write(lds->updateMask,pipe);
+			
+			/* Reset the device's update mask: */
+			lds->updateMask=DeviceState::NO_CHANGE;
+			}
+		}
+	
+	/* Terminate the update packet with a zero device ID: */
+	pipe.write<Card>(0);
+	}
+
+void CheriaClient::frame(void)
+	{
+	Threads::Mutex::Lock localDevicesLock(localDevicesMutex);
+	
+	/* Update the states of all local input devices: */
+	for(LocalDeviceMap::Iterator ldIt=localDevices.begin();!ldIt.isFinished();++ldIt)
+		{
+		Vrui::InputDevice* device=ldIt->getSource();
+		LocalDeviceState& lds=*(ldIt->getDest());
+		
+		/* Update the device's ray direction: */
+		Vector rayDirection=device->getDeviceRayDirection();
+		if(lds.rayDirection!=rayDirection)
+			lds.updateMask|=DeviceState::RAYDIRECTION;
+		lds.rayDirection=rayDirection;
+		
+		/* Update the device's position and orientation: */
+		ONTransform transform=device->getTransformation();
+		if(lds.transform!=transform)
+			lds.updateMask|=DeviceState::TRANSFORM;
+		lds.transform=transform;
+		
+		/* Update the device's button states: */
+		bool buttonChanged=false;
+		unsigned int index=0;
+		unsigned int mask=0x1U;
+		for(unsigned int buttonIndex=0;buttonIndex<lds.numButtons;++buttonIndex)
+			{
+			/* Update the button state: */
+			unsigned int oldButtonState=lds.buttonStates[index]&mask;
+			unsigned int newButtonState=lds.buttonMasks[index]&mask;
+			if(!device->getButtonState(buttonIndex))
+				newButtonState=0x0U;
+			buttonChanged=buttonChanged||newButtonState!=oldButtonState;
+			if(newButtonState)
+				lds.buttonStates[index]|=mask;
+			else
+				lds.buttonStates[index]&=~mask;
+			
+			/* Go to the next button and button mask bit: */
+			mask<<=1;
+			if(mask==0x100U)
+				{
+				++index;
+				mask=0x1U;
+				}
+			}
+		if(buttonChanged)
+			lds.updateMask|=DeviceState::BUTTON;
+		
+		/* Update the device's valuator states: */
+		bool valuatorChanged=false;
+		index=0;
+		mask=0x1U;
+		for(unsigned int valuatorIndex=0;valuatorIndex<lds.numValuators;++valuatorIndex)
+			{
+			/* Update the valuator state: */
+			Scalar newValue=Scalar(device->getValuator(valuatorIndex));
+			if((lds.valuatorMasks[index]&mask)==0)
+				newValue=Scalar(0);
+			valuatorChanged=valuatorChanged||lds.valuatorStates[valuatorIndex]!=newValue;
+			lds.valuatorStates[valuatorIndex]=newValue;
+			
+			/* Go to the next valuator mask bit: */
+			mask<<=1;
+			if(mask==0x100U)
+				{
+				++index;
+				mask=0x1U;
+				}
+			}
+		if(valuatorChanged)
+			lds.updateMask|=DeviceState::VALUATOR;
+		}
 	}
 
 void CheriaClient::frame(ProtocolClient::RemoteClientState* rcs)
@@ -773,6 +769,62 @@ void CheriaClient::frame(ProtocolClient::RemoteClientState* rcs)
 	
 	/* Process the remote client's queued server update messages: */
 	myRcs->processMessages();
+	
+	/* Calculate the transformation from the remote client's physical space into the local client's physical space: */
+	Vrui::NavTransform remoteNav=Vrui::NavTransform(client->getClientState(rcs).getLockedValue().navTransform);
+	remoteNav.doInvert();
+	remoteNav.leftMultiply(Vrui::getNavigationTransformation());
+	
+	/* Update the states of all remote input devices: */
+	for(RemoteClientState::RemoteDeviceMap::Iterator rdIt=myRcs->remoteDevices.begin();!rdIt.isFinished();++rdIt)
+		{
+		RemoteClientState::RemoteDeviceState& rds=*(rdIt->getDest());
+		
+		/* Update the device ray direction: */
+		if(rds.updateMask&DeviceState::RAYDIRECTION)
+			rds.device->setDeviceRayDirection(rds.rayDirection);
+		
+		/* Always update the device transformation as either navigation transformation might have changed: */
+		Vrui::NavTransform deviceTransform=Vrui::NavTransform(rds.transform);
+		deviceTransform.leftMultiply(remoteNav);
+		deviceTransform.renormalize();
+		rds.device->setTransformation(Vrui::TrackerState(deviceTransform.getTranslation(),deviceTransform.getRotation()));
+		
+		/* Update all button states: */
+		if(rds.updateMask&DeviceState::BUTTON)
+			{
+			unsigned int index=0;
+			unsigned int mask=0x1U;
+			for(unsigned int buttonIndex=0;buttonIndex<rds.numButtons;++buttonIndex)
+				{
+				rds.device->setButtonState(buttonIndex,(rds.buttonStates[index]&mask)!=0x0U);
+				mask<<=1;
+				if(mask==0x100U)
+					{
+					++index;
+					mask=0x1U;
+					}
+				}
+			}
+		
+		/* Update all valuator states: */
+		if(rds.updateMask&DeviceState::VALUATOR)
+			{
+			for(unsigned int valuatorIndex=0;valuatorIndex<rds.numValuators;++valuatorIndex)
+				rds.device->setValuator(valuatorIndex,rds.valuatorStates[valuatorIndex]);
+			}
+		
+		/* Reset the device's update mask: */
+		rds.updateMask=DeviceState::NO_CHANGE;
+		}
+	
+	/* Update the states of all remote pointing tools: */
+	Scalar scaleFactor=remoteNav.getScaling();
+	for(RemoteClientState::RemoteToolMap::Iterator rtIt=myRcs->remoteTools.begin();!rtIt.isFinished();++rtIt)
+		{
+		/* Set the pointing tool's scaling factor: */
+		rtIt->getDest()->setScaleFactor(scaleFactor);
+		}
 	}
 
 }

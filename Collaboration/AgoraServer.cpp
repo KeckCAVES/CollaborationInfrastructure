@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraServer - Server object to implement the Agora group audio protocol.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -24,8 +24,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
-
-#include <Collaboration/CollaborationPipe.h>
+#include <Comm/NetPipe.h>
 
 namespace Collaboration {
 
@@ -62,50 +61,59 @@ const char* AgoraServer::getName(void) const
 	return protocolName;
 	}
 
-ProtocolServer::ClientState* AgoraServer::receiveConnectRequest(unsigned int protocolMessageLength,CollaborationPipe& pipe)
+ProtocolServer::ClientState* AgoraServer::receiveConnectRequest(unsigned int protocolMessageLength,Comm::NetPipe& pipe)
 	{
+	size_t readMessageLength=0;
+	
+	/* Receive the client's protocol version: */
+	unsigned int clientProtocolVersion=pipe.read<Card>();
+	readMessageLength+=sizeof(Card);
+	
+	/* Check for the correct version number: */
+	if(clientProtocolVersion!=protocolVersion)
+		return 0;
+	
 	/* Create a new client state object: */
 	ClientState* newClientState=new ClientState;
 	
 	/* Read the SPEEX frame size, packet size, and packet buffer size: */
-	newClientState->speexFrameSize=pipe.read<unsigned int>();
-	newClientState->speexPacketSize=pipe.read<unsigned int>();
-	size_t speexPacketBufferSize=pipe.read<unsigned int>();
+	newClientState->speexFrameSize=pipe.read<Card>();
+	newClientState->speexPacketSize=pipe.read<Card>();
+	size_t speexPacketBufferSize=pipe.read<Card>();
 	newClientState->speexPacketBuffer.resize(newClientState->speexPacketSize,speexPacketBufferSize);
-	size_t readMessageLength=sizeof(unsigned int)*3;
+	readMessageLength+=sizeof(Card)*3;
 	
 	/* Read the Theora validity flag: */
-	newClientState->hasTheora=pipe.read<char>()!=0;
-	readMessageLength+=sizeof(char);
+	newClientState->hasTheora=pipe.read<Byte>()!=0;
+	readMessageLength+=sizeof(Byte);
 	
 	if(newClientState->hasTheora)
 		{
 		/* Read the client's Theora video stream headers: */
-		newClientState->theoraHeadersSize=pipe.read<unsigned int>();
-		readMessageLength+=sizeof(unsigned int);
-		newClientState->theoraHeaders=new unsigned char[newClientState->theoraHeadersSize];
-		pipe.read<unsigned char>(newClientState->theoraHeaders,newClientState->theoraHeadersSize);
+		newClientState->theoraHeadersSize=pipe.read<Card>();
+		readMessageLength+=sizeof(Card);
+		newClientState->theoraHeaders=new Byte[newClientState->theoraHeadersSize];
+		pipe.read(newClientState->theoraHeaders,newClientState->theoraHeadersSize);
 		readMessageLength+=newClientState->theoraHeadersSize;
 		
 		/* Read the client's virtual video size: */
-		for(int i=0;i<2;++i)
-			newClientState->videoSize[i]=pipe.read<Scalar>();
+		pipe.read(newClientState->videoSize,2);
 		readMessageLength+=sizeof(Scalar)*2;
 		}
 	
 	/* Check for correctness: */
 	if(protocolMessageLength!=readMessageLength)
 		{
-		/* Must be a protocol error; return failure: */
+		/* Fatal error; stop communicating with client entirely: */
 		delete newClientState;
-		return 0;
+		Misc::throwStdErr("AgoraServer::receiveConnectRequest: Protocol error; received %u bytes instead of %u",protocolMessageLength,(unsigned int)readMessageLength);
 		}
 	
 	/* Return the client state object: */
 	return newClientState;
 	}
 
-void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,CollaborationPipe& pipe)
+void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the Agora state object: */
 	ClientState* myCs=dynamic_cast<ClientState*>(cs);
@@ -115,22 +123,22 @@ void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collaborat
 	if(myCs->speexFrameSize>0)
 		{
 		/* Read all SPEEX frames sent by the client: */
-		size_t numSpeexFrames=pipe.read<unsigned short>();
+		size_t numSpeexFrames=pipe.read<Misc::UInt16>();
 		for(size_t i=0;i<numSpeexFrames;++i)
 			{
-			char* speexPacket=myCs->speexPacketBuffer.getWriteSegment();
-			pipe.read<char>(speexPacket,myCs->speexPacketSize);
+			Byte* speexPacket=myCs->speexPacketBuffer.getWriteSegment();
+			pipe.read(speexPacket,myCs->speexPacketSize);
 			myCs->speexPacketBuffer.pushSegment();
 			}
 		
 		/* Read the client's current head position: */
-		pipe.read<Scalar>(myCs->headPosition.getComponents(),3);
+		read(myCs->headPosition,pipe);
 		}
 	
 	if(myCs->hasTheora)
 		{
 		/* Check if the client sent a new video packet: */
-		if(pipe.read<char>()!=0)
+		if(pipe.read<Byte>()!=0)
 			{
 			/* Read a Theora packet from the client: */
 			VideoPacket& theoraPacket=myCs->theoraPacketBuffer.startNewValue();
@@ -139,11 +147,11 @@ void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Collaborat
 			}
 		
 		/* Read the client's new video transformation: */
-		myCs->videoTransform=pipe.readTrackerState();
+		read(myCs->videoTransform,pipe);
 		}
 	}
 
-void AgoraServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void AgoraServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the Agora state object: */
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
@@ -151,26 +159,25 @@ void AgoraServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Protoc
 		Misc::throwStdErr("AgoraServer::sendClientConnect: Client state object has mismatching type");
 	
 	/* Send the client's SPEEX frame size and packet size: */
-	pipe.write<unsigned int>(mySourceCs->speexFrameSize);
-	pipe.write<unsigned int>(mySourceCs->speexPacketSize);
+	pipe.write<Card>(mySourceCs->speexFrameSize);
+	pipe.write<Card>(mySourceCs->speexPacketSize);
 	
 	if(mySourceCs->hasTheora)
 		{
-		pipe.write<char>(1);
+		pipe.write<Byte>(1);
 		
 		/* Write the source client's Theora stream headers: */
-		pipe.write<unsigned int>(mySourceCs->theoraHeadersSize);
-		pipe.write<unsigned char>(mySourceCs->theoraHeaders,mySourceCs->theoraHeadersSize);
+		pipe.write<Card>(mySourceCs->theoraHeadersSize);
+		pipe.write(mySourceCs->theoraHeaders,mySourceCs->theoraHeadersSize);
 		
 		/* Write the client's virtual video size: */
-		for(int i=0;i<2;++i)
-			pipe.write<Scalar>(mySourceCs->videoSize[i]);
+		pipe.write(mySourceCs->videoSize,2);
 		}
 	else
-		pipe.write<char>(0);
+		pipe.write<Byte>(0);
 	}
 
-void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,CollaborationPipe& pipe)
+void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,ProtocolServer::ClientState* destCs,Comm::NetPipe& pipe)
 	{
 	/* Get a handle on the Agora state object: */
 	ClientState* mySourceCs=dynamic_cast<ClientState*>(sourceCs);
@@ -180,15 +187,15 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 	if(mySourceCs->speexFrameSize>0)
 		{
 		/* Send all SPEEX packets from the source client's packet buffer to the destination client: */
-		pipe.write<unsigned short>(mySourceCs->numSpeexPackets);
+		pipe.write<Misc::UInt16>(mySourceCs->numSpeexPackets);
 		for(size_t i=0;i<mySourceCs->numSpeexPackets;++i)
 			{
-			const char* speexPacket=mySourceCs->speexPacketBuffer.getLockedSegment(i);
-			pipe.write<char>(speexPacket,mySourceCs->speexPacketSize);
+			const Byte* speexPacket=mySourceCs->speexPacketBuffer.getLockedSegment(i);
+			pipe.write(speexPacket,mySourceCs->speexPacketSize);
 			}
 		
 		/* Write the source client's new head position: */
-		pipe.write<Scalar>(mySourceCs->headPosition.getComponents(),3);
+		write(mySourceCs->headPosition,pipe);
 		}
 	
 	/* Check if the destination client expects streaming video from the source client: */
@@ -198,14 +205,14 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 		if(mySourceCs->hasTheoraPacket)
 			{
 			/* Write the Theora packet to the client: */
-			pipe.write<char>(1);
+			pipe.write<Byte>(1);
 			mySourceCs->theoraPacketBuffer.getLockedValue().write(pipe);
 			}
 		else
-			pipe.write<char>(0);
+			pipe.write<Byte>(0);
 		
 		/* Write the source client's new video transformation: */
-		pipe.writeTrackerState(mySourceCs->videoTransform);
+		write(mySourceCs->videoTransform,pipe);
 		}
 	}
 

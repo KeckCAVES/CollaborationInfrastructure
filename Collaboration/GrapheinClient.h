@@ -1,7 +1,7 @@
 /***********************************************************************
 GrapheinClient - Client object to implement the Graphein shared
 annotation protocol.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -21,10 +21,11 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 02111-1307 USA
 ***********************************************************************/
 
-#ifndef GRAPHEINCLIENT_INCLUDED
-#define GRAPHEINCLIENT_INCLUDED
+#ifndef COLLABORATION_GRAPHEINCLIENT_INCLUDED
+#define COLLABORATION_GRAPHEINCLIENT_INCLUDED
 
 #include <vector>
+#include <IO/VariableMemoryFile.h>
 #include <Threads/Mutex.h>
 #include <GLMotif/NewButton.h>
 #include <GLMotif/Slider.h>
@@ -32,10 +33,12 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <Vrui/GenericToolFactory.h>
 #include <Vrui/ToolManager.h>
 #include <Collaboration/ProtocolClient.h>
-
-#include <Collaboration/GrapheinPipe.h>
+#include <Collaboration/GrapheinProtocol.h>
 
 /* Forward declarations: */
+namespace IO {
+class FixedMemoryFile;
+}
 class GLContextData;
 namespace GLMotif {
 class PopupWindow;
@@ -45,22 +48,27 @@ class TextField;
 
 namespace Collaboration {
 
-class GrapheinClient:public ProtocolClient,public GrapheinPipe
+class GrapheinClient:public ProtocolClient,private GrapheinProtocol
 	{
 	/* Embedded classes: */
-	protected:
+	private:
+	typedef IO::FixedMemoryFile IncomingMessage; // Type for buffers storing incoming messages
+	typedef IO::VariableMemoryFile OutgoingMessage; // Type for buffers storing outgoing messages
+	
 	class RemoteClientState:public ProtocolClient::RemoteClientState
 		{
 		/* Elements: */
 		public:
-		mutable Threads::Mutex curveMutex; // Mutex protecting the curve hash table
-		CurveHasher curves; // Set of curves owned by the remote client
+		CurveMap curves; // Set of curves owned by the remote client
+		Threads::Mutex messageBufferMutex; // Mutex serializing access to the message buffer list
+		std::vector<IncomingMessage*> messages; // List of buffers retaining server update messages between frame calls
 		
 		/* Constructors and destructors: */
 		RemoteClientState(void);
 		virtual ~RemoteClientState(void);
 		
 		/* Methods: */
+		void processMessages(void); // Reads and processes all queued server update messages
 		void glRenderAction(GLContextData& contextData) const; // Displays the remote client's state
 		};
 	
@@ -111,10 +119,10 @@ class GrapheinClient:public ProtocolClient,public GrapheinPipe
 	
 	/* Elements: */
 	private:
-	Threads::Mutex curveMutex; // Mutex protecting the curve hash table
-	unsigned int nextCurveId; // ID number for the next created curve
-	CurveHasher curves; // Set of curves owned by the client
-	CurveActionList actions; // Queue of pending curve actions
+	unsigned int nextLocalCurveId; // ID number for the next created curve
+	CurveMap localCurves; // Set of curves owned by the client
+	Threads::Mutex messageMutex; // Mutex protecting the client update message buffer
+	OutgoingMessage message; // Buffer to assemble client update messages as devices are created / destroyed
 	
 	/* Constructors and destructors: */
 	public:
@@ -124,13 +132,13 @@ class GrapheinClient:public ProtocolClient,public GrapheinPipe
 	/* Methods from ProtocolClient: */
 	virtual const char* getName(void) const;
 	virtual unsigned int getNumMessages(void) const;
-	virtual void initialize(CollaborationClient& collaborationClient,Misc::ConfigurationFileSection& configFileSection);
-	virtual void sendConnectRequest(CollaborationPipe& pipe);
-	virtual void receiveConnectReply(CollaborationPipe& pipe);
-	virtual void receiveDisconnectReply(CollaborationPipe& pipe);
-	virtual void sendClientUpdate(CollaborationPipe& pipe);
-	virtual ProtocolClient::RemoteClientState* receiveClientConnect(CollaborationPipe& pipe);
-	virtual void receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,CollaborationPipe& pipe);
+	virtual void initialize(CollaborationClient* sClient,Misc::ConfigurationFileSection& configFileSection);
+	virtual void sendConnectRequest(Comm::NetPipe& pipe);
+	virtual void receiveConnectReply(Comm::NetPipe& pipe);
+	virtual void receiveDisconnectReply(Comm::NetPipe& pipe);
+	virtual ProtocolClient::RemoteClientState* receiveClientConnect(Comm::NetPipe& pipe);
+	virtual bool receiveServerUpdate(ProtocolClient::RemoteClientState* rcs,Comm::NetPipe& pipe);
+	virtual void sendClientUpdate(Comm::NetPipe& pipe);
 	virtual void frame(ProtocolClient::RemoteClientState* rcs);
 	virtual void glRenderAction(GLContextData& contextData) const;
 	virtual void glRenderAction(const ProtocolClient::RemoteClientState* rcs,GLContextData& contextData) const;
