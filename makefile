@@ -1,6 +1,6 @@
 ########################################################################
 # Makefile for Vrui collaboration infrastructure.
-# Copyright (c) 2009-2011 Oliver Kreylos
+# Copyright (c) 2009-2012 Oliver Kreylos
 #
 # This file is part of the WhyTools Build Environment.
 # 
@@ -42,9 +42,9 @@ COLLABORATIONPLUGINSDIREXT = CollaborationPlugins
 PACKAGEROOT := $(shell pwd)
 
 # Specify version of created dynamic shared libraries
-COLLABORATION_VERSION = 2000
+COLLABORATION_VERSION = 2001
 MAJORLIBVERSION = 2
-MINORLIBVERSION = 0
+MINORLIBVERSION = 1
 COLLABORATION_NAME := Collaboration-$(MAJORLIBVERSION).$(MINORLIBVERSION)
 
 # Include definitions for the system environment and system-provided

@@ -241,6 +241,35 @@ void CollaborationClient::showSettingsToggleValueChangedCallback(GLMotif::Toggle
 		}
 	}
 
+void CollaborationClient::followClient(const CollaborationProtocol::ClientState& cs) const
+	{
+	/* Update the navigation transformation: */
+	Vrui::NavTransform nav=Vrui::NavTransform::identity;
+	nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
+	nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize());
+	nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.displaySize));
+	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
+	nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
+	nav*=cs.navTransform;
+	Vrui::setNavigationTransformation(nav);
+	}
+
+void CollaborationClient::faceClient(const CollaborationProtocol::ClientState& cs) const
+	{
+	/* Update the navigation transformation: */
+	Vrui::NavTransform nav=Vrui::NavTransform::identity;
+	nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::rotateAxis(Vrui::getUpDirection(),Math::rad(Vrui::Scalar(180))));
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
+	nav*=Vrui::NavTransform::scale(Vrui::getInchFactor());
+	nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.inchFactor));
+	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
+	nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
+	nav*=cs.navTransform;
+	Vrui::setNavigationTransformation(nav);
+	}
+
 void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData,const unsigned int& clientID)
 	{
 	if(cbData->set)
@@ -287,6 +316,13 @@ void CollaborationClient::followClientToggleValueChangedCallback(GLMotif::Toggle
 		/* Disable following: */
 		followClientID=0;
 		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+		}
+	
+	if(followClientID!=0)
+		{
+		/* Start facing the client: */
+		Threads::Mutex::Lock clientMapLock(clientMapMutex);
+		followClient(remoteClientMap.getEntry(followClientID).getDest()->state.getLockedValue());
 		}
 	}
 
@@ -336,6 +372,13 @@ void CollaborationClient::faceClientToggleValueChangedCallback(GLMotif::ToggleBu
 		/* Disable facing: */
 		faceClientID=0;
 		Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
+		}
+	
+	if(faceClientID!=0)
+		{
+		/* Start facing the client: */
+		Threads::Mutex::Lock clientMapLock(clientMapMutex);
+		faceClient(remoteClientMap.getEntry(faceClientID).getDest()->state.getLockedValue());
 		}
 	}
 
@@ -1090,37 +1133,20 @@ void CollaborationClient::frame(void)
 		RemoteClientState* client=cmIt->getDest();
 		if(client->state.lockNewValue())
 			{
-			ClientState& cs=client->state.getLockedValue();
+			const ClientState& cs=client->state.getLockedValue();
 			if(client->updateMask&ClientState::CLIENTNAME)
 				client->nameTextField->setString(cs.clientName.c_str());
 			if(client->updateMask&(ClientState::ENVIRONMENT|ClientState::NAVTRANSFORM))
 				{
 				if(client->clientID==followClientID)
 					{
-					/* Update the navigation transformation: */
-					Vrui::NavTransform nav=Vrui::NavTransform::identity;
-					nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
-					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
-					nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize());
-					nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.displaySize));
-					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
-					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
-					nav*=cs.navTransform;
-					Vrui::setNavigationTransformation(nav);
+					/* Follow this client: */
+					followClient(cs);
 					}
 				if(client->clientID==faceClientID)
 					{
-					/* Update the navigation transformation: */
-					Vrui::NavTransform nav=Vrui::NavTransform::identity;
-					nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
-					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::rotateAxis(Vrui::getUpDirection(),Math::rad(Vrui::Scalar(180))));
-					nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
-					nav*=Vrui::NavTransform::scale(Vrui::getInchFactor());
-					nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.inchFactor));
-					nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
-					nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
-					nav*=cs.navTransform;
-					Vrui::setNavigationTransformation(nav);
+					/* Face this client: */
+					faceClient(cs);
 					}
 				}
 			client->updateMask=ClientState::NO_CHANGE;

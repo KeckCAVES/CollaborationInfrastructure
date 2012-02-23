@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraClient - Client object to implement the Agora group audio protocol.
-Copyright (c) 2009-2011 Oliver Kreylos
+Copyright (c) 2009-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -102,11 +102,14 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 		
 		/* Audio decoding state: */
 		size_t remoteSpeexFrameSize; // Frame size of incoming SPEEX packets
+		Point mouthPosition; // Position of remote client's mouth in viewer's device space
 		mutable Threads::DropoutBuffer<char> speexPacketQueue; // Queue for incoming encoded SPEEX packets
-		Threads::TripleBuffer<Point> headPosition; // The remote client's current head position in navigational space
+		Point localMouthPosition; // Position of remote client's mouth in local client's physical space
 		
 		/* Video decoding state: */
 		bool hasTheora; // Flag if the server will send video data for this client
+		ONTransform videoTransform; // The remote client's transformation from its video space into its physical space
+		Scalar videoSize[2]; // Width and height of remote video image in remote client's physical space
 		#if VIDEO_CONFIG_HAVE_THEORA
 		Threads::TripleBuffer<Video::TheoraPacket> theoraPacketBuffer; // Buffer for incoming Theora video stream packets
 		Threads::MutexCond newPacketCond; // Condition variable to signal arrival of a new Theora packet from the server
@@ -115,8 +118,7 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 		Threads::TripleBuffer<Video::TheoraFrame> theoraFrameBuffer; // Triple buffer for decompressed video frames
 		Video::YpCbCr420Texture* frameTexture; // Texture to render the remote client's video stream
 		#endif
-		Threads::TripleBuffer<OGTransform> videoTransform; // The remote client's current transformation from video space into local navigation space
-		Scalar videoSize[2]; // Width and height of remote video image in virtual video space
+		OGTransform localVideoTransform; // Transformation from remote client's video space into local client's navigational space
 		
 		/* Private methods: */
 		#if VIDEO_CONFIG_HAVE_THEORA
@@ -139,14 +141,17 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 	private:
 	
 	/* Audio encoding state: */
+	Point mouthPosition; // Client's mouth position in main viewer's device space
 	#if SOUND_CONFIG_HAVE_SPEEX
 	SpeexEncoder* speexEncoder; // SPEEX audio encoder object to send local audio to all remote clients
-	bool pauseAudio; // Flag to temporarily pause audio transmission
 	#endif
+	bool pauseAudio; // Flag to temporarily pause audio transmission
+	
+	/* Audio playback state: */
+	size_t jitterBufferSize; // Size of SPEEX packet queue for audio decoding threads
 	
 	/* Video encoding state: */
 	bool hasTheora; // Flag if the server thinks this client will send video data
-	#if VIDEO_CONFIG_HAVE_THEORA
 	Video::VideoDevice* videoDevice; // V4L2 Video device to capture uncompressed video
 	Video::ImageExtractor* videoExtractor; // Extractor to convert raw video frames to Y'CbCr 4:2:0
 	GLMotif::Widget* videoDeviceSettings; // Settings dialog for the video device
@@ -154,32 +159,26 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 	GLMotif::ToggleButton* showLocalVideoWindowToggle; // Toggle button to show the local video feed
 	GLMotif::PopupWindow* localVideoWindow; // Dialog window to show the local video feed
 	GLMotif::VideoPane* videoPane; // Widget displaying the video stream
+	#if VIDEO_CONFIG_HAVE_THEORA
 	Video::TheoraEncoder theoraEncoder; // Theora video encoder object to compress video
+	#endif
+	ONTransform videoTransform; // Transformation from video space to Vrui physical space
+	Scalar videoSize[2]; // Width and height of video image in video space coordinate units
+	#if VIDEO_CONFIG_HAVE_THEORA
 	Threads::TripleBuffer<Video::TheoraFrame> theoraFrameBuffer; // Intermediate buffer to feed a single uncompressed video frame to the Theora encoder
 	Threads::TripleBuffer<Video::TheoraPacket> theoraPacketBuffer; // Triple buffer holding packets created by the Theora encoder
-	OGTransform videoTransform; // Transformation from video space to Vrui physical space
-	Scalar videoSize[2]; // Width and height of video image in video space coordinate units
+	#endif
 	bool localVideoWindowShown; // Flag whether the local video window is currently popped up
 	bool pauseVideo; // Flag to temporarily pause video transmission
-	#endif
-	
-	/* Audio playback state: */
-	size_t jitterBufferSize; // Size of SPEEX packet queue for audio decoding threads
 	
 	/* Private methods: */
-	#if VIDEO_CONFIG_HAVE_THEORA
 	void videoCaptureCallback(const Video::FrameBuffer* frame); // Called when a new frame has arrived from the video capture device
 	void showVideoDeviceSettingsCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
-	#endif
-	#if SOUND_CONFIG_HAVE_SPEEX
 	void pauseAudioCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
-	#endif
-	#if VIDEO_CONFIG_HAVE_THEORA
 	void pauseVideoCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
 	void showLocalVideoWindowCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
 	void videoDeviceSettingsCloseCallback(Misc::CallbackData* cbdata);
 	void localVideoWindowCloseCallback(Misc::CallbackData* cbdata);
-	#endif
 	
 	/* Constructors and destructors: */
 	public:

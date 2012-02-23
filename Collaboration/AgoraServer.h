@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraServer - Server object to implement the Agora group audio protocol.
-Copyright (c) 2009-2011 Oliver Kreylos
+Copyright (c) 2009-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -40,17 +40,17 @@ class AgoraServer:public ProtocolServer,private AgoraProtocol
 		
 		/* Elements: */
 		private:
+		Point mouthPosition; // Client's mouth position in its main viewer's device space
 		size_t speexFrameSize; // Client's SPEEX frame size
 		size_t speexPacketSize; // Client's SPEEX packet size
 		Threads::DropoutBuffer<Byte> speexPacketBuffer; // Buffer holding encoded SPEEX audio packets sent by the client
-		Point headPosition; // Client's current head position in navigational space
 		
 		bool hasTheora; // Flag whether the client is streaming video data
+		ONTransform videoTransform; // Transformation from client's video space to client's physical space
+		Scalar videoSize[2]; // Client's virtual video size in client's physical space
 		size_t theoraHeadersSize; // Size of the client's Theora stream header packets
 		Byte* theoraHeaders; // A little-endian buffer containing the clients Theora stream header packets
 		Threads::TripleBuffer<VideoPacket> theoraPacketBuffer; // Triple buffer containing encoded video frames from the client
-		OGTransform videoTransform; // Client's current transformation from local video space to shared navigational space
-		Scalar videoSize[2]; // Client's virtual video size in client's video space
 		
 		size_t numSpeexPackets; // Transient number of SPEEX packets in the packet queue during server updates
 		bool hasTheoraPacket; // Transient flag to denote a fresh Theora frame in the packet buffer during server updates

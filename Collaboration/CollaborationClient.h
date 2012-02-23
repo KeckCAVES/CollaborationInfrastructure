@@ -179,6 +179,8 @@ class CollaborationClient:private CollaborationProtocol
 	void createSettingsDialog(void);
 	void showSettingsDialog(void);
 	void showSettingsToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);
+	void followClient(const ClientState& cs) const; // Updates navigation transformation to follow the given client
+	void faceClient(const ClientState& cs) const; // Updates navigation transformation to face the given client
 	void followClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData,const unsigned int& clientID);
 	void faceClientToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData,const unsigned int& clientID);
 	void fixGlyphScalingToggleValueChangedCallback(GLMotif::ToggleButton::ValueChangedCallbackData* cbData);

@@ -40,3 +40,10 @@ CollaborationInfrastructure-2.0:
 - Removed input device sharing from base collaboration protocol.
 - Entirely rebased to new IO::File abstraction infrastructure.
 - Changed build system to follow Vrui's new modular build system.
+
+CollaborationInfrastructure-2.1:
+- Bumped Vrui version requirement to Vrui-2.2-003.
+- Fixed handling of client following / facing in collaboration client.
+- Improved Agora module:
+  - Reduced bandwidth by not streaming redundant data.
+  - Allowed "default" video device in configuration section.

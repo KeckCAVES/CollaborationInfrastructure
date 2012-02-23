@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraServer - Server object to implement the Agora group audio protocol.
-Copyright (c) 2009-2011 Oliver Kreylos
+Copyright (c) 2009-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -25,6 +25,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <iostream>
 #include <Misc/ThrowStdErr.h>
 #include <Comm/NetPipe.h>
+#include <Geometry/GeometryMarshallers.h>
 
 namespace Collaboration {
 
@@ -76,6 +77,10 @@ ProtocolServer::ClientState* AgoraServer::receiveConnectRequest(unsigned int pro
 	/* Create a new client state object: */
 	ClientState* newClientState=new ClientState;
 	
+	/* Read the client's mouth position: */
+	read(newClientState->mouthPosition,pipe);
+	readMessageLength+=sizeof(Point::Scalar)*3;
+	
 	/* Read the SPEEX frame size, packet size, and packet buffer size: */
 	newClientState->speexFrameSize=pipe.read<Card>();
 	newClientState->speexPacketSize=pipe.read<Card>();
@@ -89,16 +94,18 @@ ProtocolServer::ClientState* AgoraServer::receiveConnectRequest(unsigned int pro
 	
 	if(newClientState->hasTheora)
 		{
+		/* Read the client's video transformation: */
+		read(newClientState->videoTransform,pipe);
+		readMessageLength+=Misc::Marshaller<ONTransform>::getSize(newClientState->videoTransform);
+		pipe.read(newClientState->videoSize,2);
+		readMessageLength+=sizeof(Scalar)*2;
+		
 		/* Read the client's Theora video stream headers: */
 		newClientState->theoraHeadersSize=pipe.read<Card>();
 		readMessageLength+=sizeof(Card);
 		newClientState->theoraHeaders=new Byte[newClientState->theoraHeadersSize];
 		pipe.read(newClientState->theoraHeaders,newClientState->theoraHeadersSize);
 		readMessageLength+=newClientState->theoraHeadersSize;
-		
-		/* Read the client's virtual video size: */
-		pipe.read(newClientState->videoSize,2);
-		readMessageLength+=sizeof(Scalar)*2;
 		}
 	
 	/* Check for correctness: */
@@ -130,9 +137,6 @@ void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetP
 			pipe.read(speexPacket,myCs->speexPacketSize);
 			myCs->speexPacketBuffer.pushSegment();
 			}
-		
-		/* Read the client's current head position: */
-		read(myCs->headPosition,pipe);
 		}
 	
 	if(myCs->hasTheora)
@@ -145,9 +149,6 @@ void AgoraServer::receiveClientUpdate(ProtocolServer::ClientState* cs,Comm::NetP
 			theoraPacket.read(pipe);
 			myCs->theoraPacketBuffer.postNewValue();
 			}
-		
-		/* Read the client's new video transformation: */
-		read(myCs->videoTransform,pipe);
 		}
 	}
 
@@ -158,6 +159,9 @@ void AgoraServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Protoc
 	if(mySourceCs==0)
 		Misc::throwStdErr("AgoraServer::sendClientConnect: Client state object has mismatching type");
 	
+	/* Send the client's mouth position: */
+	write(mySourceCs->mouthPosition,pipe);
+	
 	/* Send the client's SPEEX frame size and packet size: */
 	pipe.write<Card>(mySourceCs->speexFrameSize);
 	pipe.write<Card>(mySourceCs->speexPacketSize);
@@ -166,12 +170,13 @@ void AgoraServer::sendClientConnect(ProtocolServer::ClientState* sourceCs,Protoc
 		{
 		pipe.write<Byte>(1);
 		
+		/* Write the client's virtual video transformation: */
+		write(mySourceCs->videoTransform,pipe);
+		pipe.write(mySourceCs->videoSize,2);
+		
 		/* Write the source client's Theora stream headers: */
 		pipe.write<Card>(mySourceCs->theoraHeadersSize);
 		pipe.write(mySourceCs->theoraHeaders,mySourceCs->theoraHeadersSize);
-		
-		/* Write the client's virtual video size: */
-		pipe.write(mySourceCs->videoSize,2);
 		}
 	else
 		pipe.write<Byte>(0);
@@ -193,9 +198,6 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 			const Byte* speexPacket=mySourceCs->speexPacketBuffer.getLockedSegment(i);
 			pipe.write(speexPacket,mySourceCs->speexPacketSize);
 			}
-		
-		/* Write the source client's new head position: */
-		write(mySourceCs->headPosition,pipe);
 		}
 	
 	/* Check if the destination client expects streaming video from the source client: */
@@ -210,9 +212,6 @@ void AgoraServer::sendServerUpdate(ProtocolServer::ClientState* sourceCs,Protoco
 			}
 		else
 			pipe.write<Byte>(0);
-		
-		/* Write the source client's new video transformation: */
-		write(mySourceCs->videoTransform,pipe);
 		}
 	}
 
