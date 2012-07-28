@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2013 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -28,12 +28,9 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 #include <stdlib.h>
 #include <stdio.h>
 #include <iostream>
-#include <Misc/SelfDestructPointer.h>
 #include <Misc/ThrowStdErr.h>
 #include <Misc/StandardValueCoders.h>
 #include <Misc/CompoundValueCoders.h>
-#include <Misc/StringMarshaller.h>
-#include <Cluster/MulticastPipe.h>
 #include <Cluster/OpenPipe.h>
 #include <GL/gl.h>
 #include <GL/GLFont.h>
@@ -57,27 +54,9 @@ Methods of class CollaborationClient::Configuration:
 ***************************************************/
 
 CollaborationClient::Configuration::Configuration(void)
+	:configFile(COLLABORATION_CONFIGFILENAME),
+	 cfg(configFile.getSection("/CollaborationClient"))
 	{
-	/* Read the configuration file: */
-	if(Vrui::isMaster())
-		{
-		/* Read the configuration file: */
-		configFile.load(COLLABORATION_CONFIGFILENAME);
-		
-		if(Vrui::getMainPipe()!=0)
-			{
-			/* Send the configuration file to the slaves: */
-			configFile.writeToPipe(*Vrui::getMainPipe());
-			}
-		}
-	else
-		{
-		/* Receive the configuration file from the master: */
-		configFile.readFromPipe(*Vrui::getMainPipe());
-		}
-	
-	/* Get the root section: */
-	cfg=configFile.getSection("/CollaborationClient");
 	}
 
 void CollaborationClient::Configuration::setServer(std::string newServerHostName,int newServerPortId)
@@ -267,10 +246,10 @@ void CollaborationClient::followClient(const CollaborationProtocol::ClientState&
 	/* Update the navigation transformation: */
 	Vrui::NavTransform nav=Vrui::NavTransform::identity;
 	nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
-	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Vrui::getForwardDirection()^Vrui::getUpDirection(),Vrui::getForwardDirection()));
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
 	nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize());
 	nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.displaySize));
-	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(cs.forward^cs.up),Vrui::Vector(cs.forward))));
+	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
 	nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
 	nav*=cs.navTransform;
 	Vrui::setNavigationTransformation(nav);
@@ -282,10 +261,10 @@ void CollaborationClient::faceClient(const CollaborationProtocol::ClientState& c
 	Vrui::NavTransform nav=Vrui::NavTransform::identity;
 	nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
 	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::rotateAxis(Vrui::getUpDirection(),Math::rad(Vrui::Scalar(180))));
-	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Vrui::getForwardDirection()^Vrui::getUpDirection(),Vrui::getForwardDirection()));
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
 	nav*=Vrui::NavTransform::scale(Vrui::getInchFactor());
 	nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.inchFactor));
-	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(cs.forward^cs.up),Vrui::Vector(cs.forward))));
+	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
 	nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
 	nav*=cs.navTransform;
 	Vrui::setNavigationTransformation(nav);
@@ -461,12 +440,8 @@ void* CollaborationClient::communicationThreadMethod(void)
 				
 				case CLIENT_CONNECT:
 					{
-					#ifdef VERBOSE
-					std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Received CLIENT_CONNECT message"<<std::endl;
-					#endif
-					
 					/* Create a new client state structure: */
-					Misc::SelfDestructPointer<RemoteClientState> newClient(new RemoteClientState);
+					RemoteClientState* newClient=new RemoteClientState;
 					
 					/* Receive the new client's state: */
 					newClient->clientID=pipe->read<Card>();
@@ -474,6 +449,13 @@ void* CollaborationClient::communicationThreadMethod(void)
 					readClientState(newState,*pipe);
 					std::string newClientName=newState.clientName;
 					newClient->state.postNewValue();
+					
+					/* Add the client to the private map: */
+					myClientMap[newClient->clientID]=newClient;
+					
+					#ifdef VERBOSE
+					std::cout<<"CollaborationClient: Connecting new remote client "<<newClient->clientID<<", name "<<newClientName<<std::endl;
+					#endif
 					
 					/* Receive the list of protocols shared with the remote client, and let the plug-ins read their message payloads: */
 					unsigned int numProtocols=pipe->read<Card>();
@@ -493,16 +475,10 @@ void* CollaborationClient::communicationThreadMethod(void)
 					/* Process higher-level protocols: */
 					receiveClientConnect(newClient->clientID);
 					
-					/* Make the new client permanent: */
-					RemoteClientState* rcs=newClient.releaseTarget();
-					
-					/* Add the client to the private map: */
-					myClientMap[rcs->clientID]=rcs;
-					
 					{
 					/* Ask to have the new client added to the list: */
 					Threads::Mutex::Lock actionListLock(actionListMutex);
-					actionList.push_back(ClientListAction(ClientListAction::ADD_CLIENT,rcs->clientID,rcs));
+					actionList.push_back(ClientListAction(ClientListAction::ADD_CLIENT,newClient->clientID,newClient));
 					}
 					
 					/* Wake up the main program: */
@@ -512,10 +488,6 @@ void* CollaborationClient::communicationThreadMethod(void)
 				
 				case CLIENT_DISCONNECT:
 					{
-					#ifdef VERBOSE
-					std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Received CLIENT_DISCONNECT message"<<std::endl;
-					#endif
-					
 					/* Read the disconnected client's ID: */
 					unsigned int clientID=pipe->read<Card>();
 					
@@ -645,10 +617,17 @@ void* CollaborationClient::communicationThreadMethod(void)
 	catch(std::runtime_error err)
 		{
 		/* Disconnect all remote clients: */
-		std::cerr<<"Node "<<Vrui::getNodeIndex()<<": "<<"CollaborationClient: Caught exception "<<err.what()<<std::endl<<std::flush;
+		std::cerr<<"CollaborationClient: Caught exception "<<err.what()<<std::endl<<std::flush;
 		
-		/* Indicate a disconnect: */
-		disconnect=true;
+		/* Kill the pipe: */
+		pipe=0;
+		
+		/* Disconnect all remote clients: */
+		{
+		Threads::Mutex::Lock actionListLock(actionListMutex);
+		for(RemoteClientMap::Iterator cmIt=myClientMap.begin();!cmIt.isFinished();++cmIt)
+			actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,cmIt->getSource(),0));
+		}
 		
 		/* Wake up the main thread: */
 		Vrui::requestUpdate();
@@ -705,7 +684,6 @@ void CollaborationClient::updateClientState(void)
 CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sConfiguration)
 	:configuration(sConfiguration!=0?sConfiguration:new Configuration),
 	 protocolLoader(configuration->cfg.retrieveString("./pluginDsoNameTemplate",COLLABORATION_PLUGINDSONAMETEMPLATE)),
-	 disconnect(false),
 	 remoteClientMap(17),protocolClientMap(31),
 	 followClientID(0),faceClientID(0),
 	 clientDialogPopup(0),showSettingsToggle(0),clientListRowColumn(0),
@@ -723,28 +701,12 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 		}
 	
 	/* Retrieve the client's display name: */
-	if(Vrui::isMaster())
-		{
-		const char* clientNameS=getenv("HOSTNAME");
-		if(clientNameS==0)
-			clientNameS=getenv("HOST");
-		if(clientNameS==0)
-			clientNameS="Anonymous Coward";
-		std::string clientName=configuration->cfg.retrieveString("./clientName",clientNameS);
-		setClientName(clientName);
-		
-		if(Vrui::getMainPipe()!=0)
-			{
-			/* Send the client name to the slaves: */
-			Misc::writeCppString(clientName,*Vrui::getMainPipe());
-			Vrui::getMainPipe()->flush();
-			}
-		}
-	else
-		{
-		/* Receive the client name from the master: */
-		setClientName(Misc::readCppString(*Vrui::getMainPipe()));
-		}
+	const char* clientNameS=getenv("HOSTNAME");
+	if(clientNameS==0)
+		clientNameS=getenv("HOST");
+	if(clientNameS==0)
+		clientNameS="Anonymous Coward";
+	setClientName(configuration->cfg.retrieveString("./clientName",clientNameS));
 	
 	/* Initialize the remote viewer and input device glyphs early: */
 	viewerGlyph.enable(Vrui::Glyph::CROSSBALL,GLMaterial(GLMaterial::Color(0.5f,0.5f,0.5f),GLMaterial::Color(0.5f,0.5f,0.5f),25.0f));
@@ -760,7 +722,7 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 	
 	/* Register all protocols listed in the configuration file section: */
 	#ifdef VERBOSE
-	std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Registering protocols:"<<std::endl;
+	std::cout<<"Registering protocols:"<<std::endl;
 	#endif
 	StringList protocolNames=configuration->cfg.retrieveValue<StringList>("./protocols",StringList());
 	for(StringList::const_iterator pnIt=protocolNames.begin();pnIt!=protocolNames.end();++pnIt)
@@ -796,7 +758,7 @@ CollaborationClient::CollaborationClient(CollaborationClient::Configuration* sCo
 
 CollaborationClient::~CollaborationClient(void)
 	{
-	if(pipe!=0)
+	if(pipe!=0&&!communicationThread.isJoined())
 		{
 		{
 		Threads::Mutex::Lock pipeLock(pipeMutex);
@@ -817,54 +779,18 @@ CollaborationClient::~CollaborationClient(void)
 		
 		/* Wait until the communication thread receives the disconnect reply and terminates: */
 		communicationThread.join();
-		
-		/* Close the pipe: */
-		pipe=0;
 		}
 	
-	/* Disconnect all remote clients: */
-	for(RemoteClientMap::Iterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
-		{
-		RemoteClientState* client=cmIt->getDest();
-		
-		#ifdef VERBOSE
-		std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Removing remote client "<<client->state.getLockedValue().clientName<<", ID "<<client->clientID<<std::endl;
-		#endif
-		
-		/* Update the index of the followed/faced client: */
-		if(followClientID==client->clientID)
-			{
-			/* Disable client following: */
-			followClientID=0;
-			Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
-			}
-		if(faceClientID==client->clientID)
-			{
-			/* Disable client facing: */
-			faceClientID=0;
-			Vrui::deactivateNavigationTool(reinterpret_cast<Vrui::Tool*>(this));
-			}
-		
-		/* Process protocol plug-ins: */
-		for(RemoteClientState::RemoteClientProtocolList::iterator pIt=client->protocols.begin();pIt!=client->protocols.end();++pIt)
-			{
-			/* Let the protocol client do its disconnection protocol: */
-			pIt->protocol->disconnectClient(pIt->protocolClientState);
-			}
-		
-		/* Process higher-level protocols: */
-		disconnectClient(client->clientID);
-		
-		/* Remove the client from the client list dialog: */
-		clientListRowColumn->removeWidgets(clientListRowColumn->getChildRow(client->nameTextField));
-		
-		/* Destroy the client state structure: */
-		delete client;
-		}
+	/* Close the pipe: */
+	pipe=0;
 	
 	/* Delete the user interface: */
 	delete clientDialogPopup;
 	delete settingsDialogPopup;
+	
+	/* Disconnect all remote clients: */
+	for(RemoteClientMap::Iterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
+		delete cmIt->getDest();
 	
 	/* Delete all protocol plug-ins: */
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
@@ -897,18 +823,10 @@ void CollaborationClient::connect(void)
 	
 	/* Connect to the remote collaboration server: */
 	#ifdef VERBOSE
-	std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Connecting to server "<<configuration->cfg.retrieveString("./serverHostName")<<" under client name "<<clientState.clientName<<std::endl;
+	std::cout<<"Connecting to server "<<configuration->cfg.retrieveString("./serverHostName")<<" under client name "<<clientState.clientName<<std::endl;
 	#endif
 	pipe=Cluster::openTCPPipe(Vrui::getClusterMultiplexer(),configuration->cfg.retrieveString("./serverHostName").c_str(),configuration->cfg.retrieveValue<int>("./serverPortId"));
 	pipe->negotiateEndianness();
-	
-	/* Decouple the writing side of the pipe if it is shared across a local cluster: */
-	Cluster::ClusterPipe* cPipe=dynamic_cast<Cluster::ClusterPipe*>(pipe.getPointer());
-	if(cPipe!=0)
-		{
-		pipe->flush();
-		cPipe->couple(true,false);
-		}
 	
 	/* Send the connection initiation message: */
 	writeMessage(CONNECT_REQUEST,*pipe);
@@ -923,7 +841,7 @@ void CollaborationClient::connect(void)
 	
 	/* Write names and message payloads of all registered protocols: */
 	#ifdef VERBOSE
-	std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Requesting protocols";
+	std::cout<<"Requesting protocols";
 	#endif
 	pipe->write<Card>(protocols.size());
 	for(ProtocolList::iterator pIt=protocols.begin();pIt!=protocols.end();++pIt)
@@ -951,7 +869,7 @@ void CollaborationClient::connect(void)
 	
 	/* Wait for the connection reply from the server: */
 	#ifdef VERBOSE
-	std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Waiting for connection reply..."<<std::flush;
+	std::cout<<"Waiting for connection reply..."<<std::flush;
 	#endif
 	MessageIdType message=readMessage(*pipe);
 	if(message==CONNECT_REJECT)
@@ -1018,9 +936,9 @@ void CollaborationClient::connect(void)
 		protocol->receiveConnectReply(*pipe);
 		#ifdef VERBOSE
 		if(numMessages>0)
-			std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Negotiated protocol "<<protocol->getName()<<" with message IDs "<<protocol->messageIdBase<<" to "<<protocol->messageIdBase+numMessages-1<<std::endl;
+			std::cout<<"Negotiated protocol "<<protocol->getName()<<" with message IDs "<<protocol->messageIdBase<<" to "<<protocol->messageIdBase+numMessages-1<<std::endl;
 		else
-			std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Negotiated protocol "<<protocol->getName()<<std::endl;
+			std::cout<<"Negotiated protocol "<<protocol->getName()<<std::endl;
 		#endif
 		}
 	
@@ -1096,45 +1014,6 @@ void CollaborationClient::hideDialog(void)
 
 void CollaborationClient::frame(void)
 	{
-	/* Bail out if not connected to the server: */
-	if(pipe==0)
-		return;
-	
-	/* Check if the server communication thread encountered an error: */
-	if(Vrui::getMainPipe()!=0)
-		{
-		if(Vrui::isMaster())
-			{
-			Vrui::getMainPipe()->write<char>(disconnect?1:0);
-			Vrui::getMainPipe()->flush();
-			}
-		else
-			disconnect=Vrui::getMainPipe()->read<char>()!=0;
-		}
-	if(disconnect)
-		{
-		/* Shut down the server communication thread on the slaves nodes: */
-		if(!Vrui::isMaster())
-			{
-			communicationThread.cancel();
-			communicationThread.join();
-			}
-		
-		/* Disconnect all remote clients: */
-		{
-		Threads::Mutex::Lock actionListLock(actionListMutex);
-		for(RemoteClientMap::Iterator cmIt=remoteClientMap.begin();!cmIt.isFinished();++cmIt)
-			actionList.push_back(ClientListAction(ClientListAction::REMOVE_CLIENT,cmIt->getSource(),0));
-		}
-		
-		/* Close the communication pipe: */
-		pipe=0;
-		disconnect=false;
-		
-		/* Show an error message: */
-		Vrui::showErrorMessage("CollaborationClient","Disconnected from collaboration server due to communication error");
-		}
-	
 	/* Lock the client map: */
 	Threads::Mutex::Lock clientMapLock(clientMapMutex);
 	
@@ -1151,7 +1030,7 @@ void CollaborationClient::frame(void)
 				client->state.lockNewValue();
 				
 				#ifdef VERBOSE
-				std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Adding new remote client "<<client->state.getLockedValue().clientName<<", ID "<<alIt->clientID<<std::endl;
+				std::cout<<"Adding new remote client "<<client->state.getLockedValue().clientName<<", ID "<<alIt->clientID<<std::endl;
 				#endif
 				
 				/* Store the new client state in the client map: */
@@ -1195,7 +1074,7 @@ void CollaborationClient::frame(void)
 					RemoteClientState* client=cmIt->getDest();
 					
 					#ifdef VERBOSE
-					std::cout<<"Node "<<Vrui::getNodeIndex()<<": "<<"Removing remote client "<<client->state.getLockedValue().clientName<<", ID "<<client->clientID<<std::endl;
+					std::cout<<"Removing remote client "<<client->state.getLockedValue().clientName<<", ID "<<client->clientID<<std::endl;
 					#endif
 					
 					/* Update the index of the followed/faced client: */

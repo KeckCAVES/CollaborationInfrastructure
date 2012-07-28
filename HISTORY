@@ -50,27 +50,3 @@ CollaborationInfrastructure-2.1:
 
 CollaborationInfrastructure-2.2:
 - Bumped Vrui version requirement to Vrui-2.4-001.
-
-CollaborationInfrastructure-2.3:
-- Bumped Vrui version requirement to Vrui-2.5-001.
-- Fixed several cluster-related issues in base collaboration protocol
-  and protocol plug-ins.
-- Made minor changes to build system in line with Vrui.
-
-CollaborationInfrastructure-2.4:
-- Bumped Vrui version requirement to Vrui-2.6-001.
-- Adapted collaboration client vislet to new vislet initialization
-  procedure.
-
-CollaborationInfrastructure-2.5:
-- Fixed installation path for make configuration file if INSTALLPREFIX
-  is specified. Pointed out by Braden Pellett.
-- Bumped Vrui version requirement to Vrui-2.7-001.
-
-CollaborationInfrastructure-2.6:
-- Bumped Vrui version requirement to Vrui-3.0-001.
-- Replaced all Geometry::cross with operator^.
-- Updated Cheria protocol:
-  - Added ray start parameter to sharing state.
-  - Added linear and angular device velocities to sharing state.
-  - Updated protocol version to 3.0.

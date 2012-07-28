@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaProtocol - Class defining the communication protocol between a
 Cheria server and a Cheria client.
-Copyright (c) 2010-2013 Oliver Kreylos
+Copyright (c) 2010-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -52,10 +52,9 @@ class CheriaProtocol:public Protocol
 			NO_CHANGE=0x0,    // No change in device state
 			RAYDIRECTION=0x1, // Device's ray direction in device coordinates changed
 			TRANSFORM=0x2,    // Device's position and orientation in environment's physical space changed
-			VELOCITY=0x4,     // Device's linear or angular velocities changed
-			BUTTON=0x8,       // Any button changed state
-			VALUATOR=0x10,    // Any valuator changed state
-			FULL_UPDATE=0x1f  // Full initialization
+			BUTTON=0x4,       // Any button changed state
+			VALUATOR=0x8,     // Any valuator changed state
+			FULL_UPDATE=0xf   // Full initialization
 			};
 		
 		/* Elements: */
@@ -65,9 +64,7 @@ class CheriaProtocol:public Protocol
 		unsigned int numValuators; // Number of valuators on the device
 		unsigned int updateMask; // Cumulative update mask of this device state
 		Vector rayDirection; // Device's preferred ray direction in device space
-		Scalar rayStart; // Start parameter of device's ray
 		ONTransform transform; // Device's position and orientation in client's physical space
-		Vector linearVelocity,angularVelocity; // Device's linear and angular velocities in client's physical space
 		Byte* buttonStates; // Bit array of button flags
 		Scalar* valuatorStates; // Array of valuator values
 		

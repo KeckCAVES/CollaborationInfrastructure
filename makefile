@@ -1,6 +1,6 @@
 ########################################################################
 # Makefile for Vrui collaboration infrastructure.
-# Copyright (c) 2009-2013 Oliver Kreylos
+# Copyright (c) 2009-2012 Oliver Kreylos
 #
 # This file is part of the WhyTools Build Environment.
 # 
@@ -24,10 +24,7 @@
 # matches the default Vrui installation; if Vrui's installation
 # directory was changed during Vrui's installation, the directory below
 # must be adapted.
-VRUI_MAKEDIR := $(HOME)/Vrui-3.0/share/make
-ifdef DEBUG
-  VRUI_MAKEDIR := $(VRUI_MAKEDIR)/debug
-endif
+VRUI_MAKEDIR := $(HOME)/Vrui-2.4/share/make
 
 # Root directory for protocol plugins underneath Vrui's library
 # directory:
@@ -45,9 +42,9 @@ COLLABORATIONPLUGINSDIREXT = CollaborationPlugins
 PACKAGEROOT := $(shell pwd)
 
 # Specify version of created dynamic shared libraries
-COLLABORATION_VERSION = 2006
+COLLABORATION_VERSION = 2002
 MAJORLIBVERSION = 2
-MINORLIBVERSION = 6
+MINORLIBVERSION = 2
 COLLABORATION_NAME := Collaboration-$(MAJORLIBVERSION).$(MINORLIBVERSION)
 
 # Include definitions for the system environment and system-provided
@@ -297,10 +294,10 @@ $(call PLUGINNAME,%): CFLAGS += $(CPLUGINFLAGS)
 $(call PLUGINNAME,%): $(OBJDIR)/Collaboration/%.o
 	@mkdir -p $(PLUGINDESTDIR)
 ifdef SHOWCOMMAND
-	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 else
 	@echo Linking $@...
-	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 endif
 
 # Dependencies for protocol plug-ins:
@@ -349,10 +346,10 @@ $(call VISLETNAME,%): CFLAGS += $(CPLUGINFLAGS)
 $(call VISLETNAME,%): $(OBJDIR)/%Vislet.o
 	@mkdir -p $(VISLETDESTDIR)
 ifdef SHOWCOMMAND
-	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 else
 	@echo Linking $@...
-	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 endif
 
 $(call VISLETNAME,CollaborationClient): $(OBJDIR)/CollaborationClientVislet.o
@@ -385,7 +382,6 @@ ifdef INSTALLPREFIX
   EXECUTABLEINSTALLDIR := $(INSTALLPREFIX)/$(EXECUTABLEINSTALLDIR)
   ETCINSTALLDIR := $(INSTALLPREFIX)/$(ETCINSTALLDIR)
   SHAREINSTALLDIR := $(INSTALLPREFIX)/$(SHAREINSTALLDIR)
-  MAKEINSTALLDIR := $(INSTALLPREFIX)/$(MAKEINSTALLDIR)
 endif
 
 install: all
@@ -415,11 +411,11 @@ install: all
 	@echo Installing configuration files...
 	@install -d $(ETCINSTALLDIR)
 	@install -m u=rw,go=r share/Collaboration.cfg $(ETCINSTALLDIR)
-# Install the package and configuration files in MAKEINSTALLDIR:
+# Install the package and configuration files in SHAREINSTALLDIR/make:
 	@echo Installing makefile fragments...
-	@install -d $(MAKEINSTALLDIR)
-	@install -m u=rw,go=r BuildRoot/Packages.Collaboration $(MAKEINSTALLDIR)
-	@install -m u=rw,go=r $(MAKECONFIGFILE) $(MAKEINSTALLDIR)
+	@install -d $(SHAREINSTALLDIR)/make
+	@install -m u=rw,go=r BuildRoot/Packages.Collaboration $(SHAREINSTALLDIR)/make
+	@install -m u=rw,go=r $(MAKECONFIGFILE) $(SHAREINSTALLDIR)/make
 
 uninstall:
 	@echo Removing header files...
@@ -436,5 +432,5 @@ uninstall:
 	@echo Removing configuration files...
 	@rm -f $(ETCINSTALLDIR)/Collaboration.cfg
 	@echo Removing makefile fragments...
-	@rm -f $(MAKEINSTALLDIR)/Packages.Collaboration
-	@rm -f $(MAKEINSTALLDIR)/Configuration.Collaboration
+	@rm -f $(SHAREINSTALLDIR)/make/Packages.Collaboration
+	@rm -f $(SHAREINSTALLDIR)/make/Configuration.Collaboration

@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaClient - Client object to implement the Cheria input device
 distribution protocol.
-Copyright (c) 2010-2013 Oliver Kreylos
+Copyright (c) 2010-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -695,30 +695,16 @@ void CheriaClient::frame(void)
 		LocalDeviceState& lds=*(ldIt->getDest());
 		
 		/* Update the device's ray direction: */
-		Vector rayDirection(device->getDeviceRayDirection()); // Conversion to lower precision
-		Scalar rayStart=Scalar(device->getDeviceRayStart()); // Conversion to lower precision
-		if(lds.rayDirection!=rayDirection||lds.rayStart!=rayStart)
-			{
+		Vector rayDirection=device->getDeviceRayDirection();
+		if(lds.rayDirection!=rayDirection)
 			lds.updateMask|=DeviceState::RAYDIRECTION;
-			lds.rayDirection=rayDirection;
-			lds.rayStart=rayStart;
-			}
+		lds.rayDirection=rayDirection;
 		
 		/* Update the device's position and orientation: */
-		ONTransform transform(device->getTransformation()); // Conversion to lower precision
+		ONTransform transform=device->getTransformation();
 		if(lds.transform!=transform)
 			lds.updateMask|=DeviceState::TRANSFORM;
 		lds.transform=transform;
-		
-		/* Update the device's velocities: */
-		Vector linearVelocity(device->getLinearVelocity()); // Conversion to lower precision
-		Vector angularVelocity(device->getAngularVelocity()); // Conversion to lower precision
-		if(lds.linearVelocity!=linearVelocity||lds.angularVelocity!=angularVelocity)
-			{
-			lds.updateMask|=DeviceState::VELOCITY;
-			lds.linearVelocity=linearVelocity;
-			lds.angularVelocity=angularVelocity;
-			}
 		
 		/* Update the device's button states: */
 		bool buttonChanged=false;
@@ -755,7 +741,7 @@ void CheriaClient::frame(void)
 		for(unsigned int valuatorIndex=0;valuatorIndex<lds.numValuators;++valuatorIndex)
 			{
 			/* Update the valuator state: */
-			Scalar newValue(device->getValuator(valuatorIndex)); // Conversion to lower precision
+			Scalar newValue=Scalar(device->getValuator(valuatorIndex));
 			if((lds.valuatorMasks[index]&mask)==0)
 				newValue=Scalar(0);
 			valuatorChanged=valuatorChanged||lds.valuatorStates[valuatorIndex]!=newValue;
@@ -796,17 +782,13 @@ void CheriaClient::frame(ProtocolClient::RemoteClientState* rcs)
 		
 		/* Update the device ray direction: */
 		if(rds.updateMask&DeviceState::RAYDIRECTION)
-			rds.device->setDeviceRay(rds.rayDirection,rds.rayStart);
+			rds.device->setDeviceRayDirection(rds.rayDirection);
 		
 		/* Always update the device transformation as either navigation transformation might have changed: */
 		Vrui::NavTransform deviceTransform=Vrui::NavTransform(rds.transform);
 		deviceTransform.leftMultiply(remoteNav);
 		deviceTransform.renormalize();
 		rds.device->setTransformation(Vrui::TrackerState(deviceTransform.getTranslation(),deviceTransform.getRotation()));
-		
-		/* Always update the device velocities as either navigation transformation might have changed: */
-		rds.device->setLinearVelocity(remoteNav.transform(rds.linearVelocity));
-		rds.device->setAngularVelocity(remoteNav.transform(rds.angularVelocity));
 		
 		/* Update all button states: */
 		if(rds.updateMask&DeviceState::BUTTON)
