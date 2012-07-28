@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2014 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -102,8 +102,7 @@ class CollaborationClient:private CollaborationProtocol
 		public:
 		unsigned int clientID; // Server-wide unique client ID
 		RemoteClientProtocolList protocols; // List of protocols and protocol states shared with this client
-		ClientState currentState; // Current client state
-		Threads::TripleBuffer<ClientState> state; // Triple buffer to push client state updates to the main thread
+		Threads::TripleBuffer<ClientState> state; // Transient client state
 		volatile unsigned int updateMask; // Accumulated update mask from recent server updates
 		GLMotif::TextField* nameTextField; // Pointer to display name text field for this client
 		GLMotif::ToggleButton* followToggle; // Pointer to "follow" toggle button for this client
@@ -146,7 +145,6 @@ class CollaborationClient:private CollaborationProtocol
 	protected:
 	Threads::Mutex pipeMutex; // Mutex serializing access to the collaboration pipe
 	Comm::NetPipePtr pipe; // Pipe connected to the collaboration server
-	volatile bool disconnect; // Flag if the server communication thread encountered an error
 	private:
 	Threads::Thread communicationThread; // Thread handling communication with the collaboration server
 	ProtocolList protocols; // List of protocols currently registered with the server

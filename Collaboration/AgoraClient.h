@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraClient - Client object to implement the Agora group audio protocol.
-Copyright (c) 2009-2014 Oliver Kreylos
+Copyright (c) 2009-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -25,7 +25,6 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <string>
 #include <Threads/MutexCond.h>
-#include <Threads/Thread.h>
 #include <Threads/TripleBuffer.h>
 #include <Threads/DropoutBuffer.h>
 #include <GL/gl.h>
@@ -104,7 +103,6 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 		/* Audio decoding state: */
 		size_t remoteSpeexFrameSize; // Frame size of incoming SPEEX packets
 		Point mouthPosition; // Position of remote client's mouth in viewer's device space
-		float rolloffFactor; // Roll-off factor for attenuation of remote audio sources; 0.0 disables attenuation
 		mutable Threads::DropoutBuffer<char> speexPacketQueue; // Queue for incoming encoded SPEEX packets
 		Point localMouthPosition; // Position of remote client's mouth in local client's physical space
 		
@@ -147,12 +145,10 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 	#if SOUND_CONFIG_HAVE_SPEEX
 	SpeexEncoder* speexEncoder; // SPEEX audio encoder object to send local audio to all remote clients
 	#endif
-	bool haveAudio; // Flag whether the client actually has an audio capture device
 	bool pauseAudio; // Flag to temporarily pause audio transmission
 	
 	/* Audio playback state: */
 	size_t jitterBufferSize; // Size of SPEEX packet queue for audio decoding threads
-	float rolloffFactor; // Roll-off factor for attenuation of remote audio sources; 0.0 disables attenuation
 	
 	/* Video encoding state: */
 	bool hasTheora; // Flag if the server thinks this client will send video data
@@ -172,7 +168,6 @@ class AgoraClient:public ProtocolClient,private AgoraProtocol
 	Threads::TripleBuffer<Video::TheoraFrame> theoraFrameBuffer; // Intermediate buffer to feed a single uncompressed video frame to the Theora encoder
 	Threads::TripleBuffer<Video::TheoraPacket> theoraPacketBuffer; // Triple buffer holding packets created by the Theora encoder
 	#endif
-	bool haveVideo; // Flag whether the client actually has a video capture device
 	bool localVideoWindowShown; // Flag whether the local video window is currently popped up
 	bool pauseVideo; // Flag to temporarily pause video transmission
 	

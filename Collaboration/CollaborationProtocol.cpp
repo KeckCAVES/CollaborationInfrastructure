@@ -1,7 +1,7 @@
 /***********************************************************************
 CollaborationProtocol - Class defining the communication protocol
 between a collaboration client and a collaboration server.
-Copyright (c) 2007-2017 Oliver Kreylos
+Copyright (c) 2007-2011 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -134,7 +134,7 @@ void CollaborationProtocol::readClientState(CollaborationProtocol::ClientState& 
 			read(clientState.viewerStates[i],source);
 		}
 	
-	if(newUpdateMask&ClientState::NAVTRANSFORM)
+	if(newUpdateMask&&ClientState::NAVTRANSFORM)
 		{
 		/* Read the navigation transformation: */
 		read(clientState.navTransform,source);
@@ -179,7 +179,7 @@ void CollaborationProtocol::writeClientState(unsigned int updateMask,const Colla
 			write(clientState.viewerStates[i],sink);
 		}
 	
-	if(updateMask&ClientState::NAVTRANSFORM)
+	if(updateMask&&ClientState::NAVTRANSFORM)
 		{
 		/* Write the navigation transformation: */
 		write(clientState.navTransform,sink);

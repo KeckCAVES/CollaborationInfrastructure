@@ -2,7 +2,7 @@
 CollaborationClientTest - Simple Vrui application to test the
 collaboration between spatially distributed VR environments using the
 collaboration client class.
-Copyright (c) 2007-2012 Oliver Kreylos
+Copyright (c) 2007-2009 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
