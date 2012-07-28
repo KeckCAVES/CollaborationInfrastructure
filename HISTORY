@@ -47,3 +47,6 @@ CollaborationInfrastructure-2.1:
 - Improved Agora module:
   - Reduced bandwidth by not streaming redundant data.
   - Allowed "default" video device in configuration section.
+
+CollaborationInfrastructure-2.2:
+- Bumped Vrui version requirement to Vrui-2.4-001.

@@ -92,6 +92,7 @@ int main(int argc,char* argv[])
 		
 		/* Run the server loop at the specified time interval: */
 		Misc::Time nextTick=Misc::Time::now();
+		int i=0;
 		while(runServerLoop)
 			{
 			/* Sleep for the tick time: */
@@ -102,6 +103,8 @@ int main(int argc,char* argv[])
 			
 			/* Update the server state: */
 			server.update();
+			std::cout<<'\r'<<char('0'+i%10)<<std::flush;
+			++i;
 			}
 		}
 	catch(std::runtime_error err)
