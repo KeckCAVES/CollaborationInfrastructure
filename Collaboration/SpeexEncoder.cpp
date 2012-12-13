@@ -1,7 +1,7 @@
 /***********************************************************************
 SpeexEncoder - Class encapsulating an audio encoder using the SPEEX
 speech codec.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -34,7 +34,7 @@ Methods of class SpeexEncoder:
 void* SpeexEncoder::encodingThreadMethod(void)
 	{
 	Threads::Thread::setCancelState(Threads::Thread::CANCEL_ENABLE);
-	Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
+	// Threads::Thread::setCancelType(Threads::Thread::CANCEL_ASYNCHRONOUS);
 	
 	while(true)
 		{
