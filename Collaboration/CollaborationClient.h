@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2011 Oliver Kreylos
+Copyright (c) 2007-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -145,6 +145,7 @@ class CollaborationClient:private CollaborationProtocol
 	protected:
 	Threads::Mutex pipeMutex; // Mutex serializing access to the collaboration pipe
 	Comm::NetPipePtr pipe; // Pipe connected to the collaboration server
+	volatile bool disconnect; // Flag if the server communication thread encountered an error
 	private:
 	Threads::Thread communicationThread; // Thread handling communication with the collaboration server
 	ProtocolList protocols; // List of protocols currently registered with the server

@@ -1,7 +1,7 @@
 /***********************************************************************
 SpeexEncoder - Class encapsulating an audio encoder using the SPEEX
 speech codec.
-Copyright (c) 2009-2010 Oliver Kreylos
+Copyright (c) 2009-2012 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
