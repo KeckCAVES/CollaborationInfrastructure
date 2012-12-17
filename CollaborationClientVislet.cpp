@@ -183,10 +183,10 @@ Vrui::VisletFactory* CollaborationClient::getFactory(void) const
 
 void CollaborationClient::disable(void)
 	{
-	Vislet::disable();
-	
-	if(!isActive()&&collaborationClient!=0)
+	if(collaborationClient!=0)
 		{
+		Vislet::disable();
+		
 		/* Hide the collaboration client's dialog: */
 		collaborationClient->hideDialog();
 		}
@@ -194,10 +194,10 @@ void CollaborationClient::disable(void)
 
 void CollaborationClient::enable(void)
 	{
-	Vislet::enable();
-	
-	if(isActive()&&collaborationClient!=0)
+	if(collaborationClient!=0)
 		{
+		Vislet::enable();
+		
 		/* Show the collaboration client's dialog: */
 		collaborationClient->showDialog();
 		}
@@ -205,55 +205,37 @@ void CollaborationClient::enable(void)
 
 void CollaborationClient::frame(void)
 	{
-	if(isActive()&&collaborationClient!=0)
-		{
-		if(firstFrame)
-			{
-			/* Show and minimize the collaboration client dialog: */
-			collaborationClient->showDialog();
-			Vrui::getWidgetManager()->hide(collaborationClient->getDialog());
-			
-			firstFrame=false;
-			}
-		
-		/* Call the collaboration client's frame method: */
-		collaborationClient->frame();
-		}
+	/* Call the collaboration client's frame method: */
+	collaborationClient->frame();
 	}
 
 void CollaborationClient::display(GLContextData& contextData) const
 	{
-	if(isActive()&&collaborationClient!=0)
-		{
-		/* Go to navigational coordinates: */
-		glMatrixMode(GL_MODELVIEW);
-		glPushMatrix();
-		glLoadIdentity();
-		glMultMatrix(getDisplayState(contextData).modelviewNavigational);
-		
-		/* Call the collaboration client's display method: */
-		collaborationClient->display(contextData);
-		
-		/* Return to physical coordinates: */
-		glMatrixMode(GL_MODELVIEW);
-		glPopMatrix();
-		}
+	/* Go to navigational coordinates: */
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+	glMultMatrix(getDisplayState(contextData).modelviewNavigational);
+	
+	/* Call the collaboration client's display method: */
+	collaborationClient->display(contextData);
+	
+	/* Return to physical coordinates: */
+	glMatrixMode(GL_MODELVIEW);
+	glPopMatrix();
 	}
 
 void CollaborationClient::sound(ALContextData& contextData) const
 	{
-	if(isActive()&&collaborationClient!=0)
-		{
-		/* Go to navigational coordinates: */
-		contextData.pushMatrix();
-		contextData.multMatrix(Vrui::getNavigationTransformation());
-		
-		/* Call the collaboration client's sound method: */
-		collaborationClient->sound(contextData);
-		
-		/* Return to physical coordinates: */
-		contextData.popMatrix();
-		}
+	/* Go to navigational coordinates: */
+	contextData.pushMatrix();
+	contextData.multMatrix(Vrui::getNavigationTransformation());
+	
+	/* Call the collaboration client's sound method: */
+	collaborationClient->sound(contextData);
+	
+	/* Return to physical coordinates: */
+	contextData.popMatrix();
 	}
 
 }

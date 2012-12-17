@@ -50,3 +50,14 @@ CollaborationInfrastructure-2.1:
 
 CollaborationInfrastructure-2.2:
 - Bumped Vrui version requirement to Vrui-2.4-001.
+
+CollaborationInfrastructure-2.3:
+- Bumped Vrui version requirement to Vrui-2.5-001.
+- Fixed several cluster-related issues in base collaboration protocol
+  and protocol plug-ins.
+- Made minor changes to build system in line with Vrui.
+
+CollaborationInfrastructure-2.4:
+- Bumped Vrui version requirement to Vrui-2.6-001.
+- Adapted collaboration client vislet to new vislet initialization
+  procedure.

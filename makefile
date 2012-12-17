@@ -24,7 +24,10 @@
 # matches the default Vrui installation; if Vrui's installation
 # directory was changed during Vrui's installation, the directory below
 # must be adapted.
-VRUI_MAKEDIR := $(HOME)/Vrui-2.4/share/make
+VRUI_MAKEDIR := $(HOME)/Vrui-2.6/share/make
+ifdef DEBUG
+  VRUI_MAKEDIR := $(VRUI_MAKEDIR)/debug
+endif
 
 # Root directory for protocol plugins underneath Vrui's library
 # directory:
@@ -42,9 +45,9 @@ COLLABORATIONPLUGINSDIREXT = CollaborationPlugins
 PACKAGEROOT := $(shell pwd)
 
 # Specify version of created dynamic shared libraries
-COLLABORATION_VERSION = 2002
+COLLABORATION_VERSION = 2004
 MAJORLIBVERSION = 2
-MINORLIBVERSION = 2
+MINORLIBVERSION = 4
 COLLABORATION_NAME := Collaboration-$(MAJORLIBVERSION).$(MINORLIBVERSION)
 
 # Include definitions for the system environment and system-provided
@@ -294,10 +297,10 @@ $(call PLUGINNAME,%): CFLAGS += $(CPLUGINFLAGS)
 $(call PLUGINNAME,%): $(OBJDIR)/Collaboration/%.o
 	@mkdir -p $(PLUGINDESTDIR)
 ifdef SHOWCOMMAND
-	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 else
 	@echo Linking $@...
-	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 endif
 
 # Dependencies for protocol plug-ins:
@@ -346,10 +349,10 @@ $(call VISLETNAME,%): CFLAGS += $(CPLUGINFLAGS)
 $(call VISLETNAME,%): $(OBJDIR)/%Vislet.o
 	@mkdir -p $(VISLETDESTDIR)
 ifdef SHOWCOMMAND
-	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 else
 	@echo Linking $@...
-	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $^ $(LINKDIRFLAGS) $(LINKLIBFLAGS)
+	@$(CCOMP) $(PLUGINLINKFLAGS) -o $@ $(filter %.o,$^) $(LINKDIRFLAGS) $(LINKLIBFLAGS)
 endif
 
 $(call VISLETNAME,CollaborationClient): $(OBJDIR)/CollaborationClientVislet.o
@@ -411,11 +414,11 @@ install: all
 	@echo Installing configuration files...
 	@install -d $(ETCINSTALLDIR)
 	@install -m u=rw,go=r share/Collaboration.cfg $(ETCINSTALLDIR)
-# Install the package and configuration files in SHAREINSTALLDIR/make:
+# Install the package and configuration files in MAKEINSTALLDIR:
 	@echo Installing makefile fragments...
-	@install -d $(SHAREINSTALLDIR)/make
-	@install -m u=rw,go=r BuildRoot/Packages.Collaboration $(SHAREINSTALLDIR)/make
-	@install -m u=rw,go=r $(MAKECONFIGFILE) $(SHAREINSTALLDIR)/make
+	@install -d $(MAKEINSTALLDIR)
+	@install -m u=rw,go=r BuildRoot/Packages.Collaboration $(MAKEINSTALLDIR)
+	@install -m u=rw,go=r $(MAKECONFIGFILE) $(MAKEINSTALLDIR)
 
 uninstall:
 	@echo Removing header files...
@@ -432,5 +435,5 @@ uninstall:
 	@echo Removing configuration files...
 	@rm -f $(ETCINSTALLDIR)/Collaboration.cfg
 	@echo Removing makefile fragments...
-	@rm -f $(SHAREINSTALLDIR)/make/Packages.Collaboration
-	@rm -f $(SHAREINSTALLDIR)/make/Configuration.Collaboration
+	@rm -f $(MAKEINSTALLDIR)/Packages.Collaboration
+	@rm -f $(MAKEINSTALLDIR)/Configuration.Collaboration
