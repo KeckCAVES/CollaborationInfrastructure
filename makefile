@@ -24,7 +24,7 @@
 # matches the default Vrui installation; if Vrui's installation
 # directory was changed during Vrui's installation, the directory below
 # must be adapted.
-VRUI_MAKEDIR := $(HOME)/Vrui-2.5/share/make
+VRUI_MAKEDIR := $(HOME)/Vrui-2.6/share/make
 ifdef DEBUG
   VRUI_MAKEDIR := $(VRUI_MAKEDIR)/debug
 endif
@@ -45,9 +45,9 @@ COLLABORATIONPLUGINSDIREXT = CollaborationPlugins
 PACKAGEROOT := $(shell pwd)
 
 # Specify version of created dynamic shared libraries
-COLLABORATION_VERSION = 2003
+COLLABORATION_VERSION = 2004
 MAJORLIBVERSION = 2
-MINORLIBVERSION = 3
+MINORLIBVERSION = 4
 COLLABORATION_NAME := Collaboration-$(MAJORLIBVERSION).$(MINORLIBVERSION)
 
 # Include definitions for the system environment and system-provided
