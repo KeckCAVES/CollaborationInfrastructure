@@ -66,3 +66,11 @@ CollaborationInfrastructure-2.5:
 - Fixed installation path for make configuration file if INSTALLPREFIX
   is specified. Pointed out by Braden Pellett.
 - Bumped Vrui version requirement to Vrui-2.7-001.
+
+CollaborationInfrastructure-2.6:
+- Bumped Vrui version requirement to Vrui-3.0-001.
+- Replaced all Geometry::cross with operator^.
+- Updated Cheria protocol:
+  - Added ray start parameter to sharing state.
+  - Added linear and angular device velocities to sharing state.
+  - Updated protocol version to 3.0.

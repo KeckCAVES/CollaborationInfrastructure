@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaProtocol - Class defining the communication protocol between a
 Cheria server and a Cheria client.
-Copyright (c) 2010-2011 Oliver Kreylos
+Copyright (c) 2010-2013 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -36,8 +36,9 @@ CheriaProtocol::DeviceState::DeviceState(int sTrackType,unsigned int sNumButtons
 	 numButtons(sNumButtons),
 	 numValuators(sNumValuators),
 	 updateMask(NO_CHANGE),
-	 rayDirection(0,1,0),
+	 rayDirection(0,1,0),rayStart(0),
 	 transform(ONTransform::identity),
+	 linearVelocity(Vector::zero),angularVelocity(Vector::zero),
 	 buttonStates(numButtons>0?new Byte[(numButtons+7)/8]:0),
 	 valuatorStates(numValuators>0?new Scalar[numValuators]:0)
 	{
@@ -55,8 +56,9 @@ CheriaProtocol::DeviceState::DeviceState(IO::File& source)
 	 numButtons(source.read<Card>()),
 	 numValuators(source.read<Card>()),
 	 updateMask(NO_CHANGE),
-	 rayDirection(0,1,0),
+	 rayDirection(0,1,0),rayStart(0),
 	 transform(ONTransform::identity),
+	 linearVelocity(Vector::zero),angularVelocity(Vector::zero),
 	 buttonStates(numButtons>0?new Byte[(numButtons+7)/8]:0),
 	 valuatorStates(numValuators>0?new Scalar[numValuators]:0)
 	{
@@ -95,11 +97,21 @@ void CheriaProtocol::DeviceState::read(IO::File& source)
 	
 	/* Read the device's ray direction: */
 	if(newUpdateMask&RAYDIRECTION)
+		{
 		CheriaProtocol::read(rayDirection,source);
+		CheriaProtocol::read(rayStart,source);
+		}
 	
 	/* Read the device's position and orientation: */
 	if(newUpdateMask&TRANSFORM)
 		CheriaProtocol::read(transform,source);
+	
+	/* Read the device's linear and angular velocities: */
+	if(newUpdateMask&VELOCITY)
+		{
+		CheriaProtocol::read(linearVelocity,source);
+		CheriaProtocol::read(angularVelocity,source);
+		}
 	
 	/* Read the device's button states: */
 	if(newUpdateMask&BUTTON)
@@ -120,11 +132,21 @@ void CheriaProtocol::DeviceState::write(unsigned int writeUpdateMask,IO::File& s
 	
 	/* Write the device's ray direction: */
 	if(writeUpdateMask&RAYDIRECTION)
+		{
 		CheriaProtocol::write(rayDirection,sink);
+		CheriaProtocol::write(rayStart,sink);
+		}
 	
 	/* Write the device's position and orientation: */
 	if(writeUpdateMask&TRANSFORM)
 		CheriaProtocol::write(transform,sink);
+	
+	/* Write the device's linear and angular velocities: */
+	if(writeUpdateMask&VELOCITY)
+		{
+		CheriaProtocol::write(linearVelocity,sink);
+		CheriaProtocol::write(angularVelocity,sink);
+		}
 	
 	/* Write the device's button states: */
 	if(writeUpdateMask&BUTTON)
@@ -219,6 +241,6 @@ Static elements of class CheriaProtocol:
 ***************************************/
 
 const char* CheriaProtocol::protocolName="Cheria"; // How inventive
-const unsigned int CheriaProtocol::protocolVersion=(2U<<16)+0U; // Version 2.0
+const unsigned int CheriaProtocol::protocolVersion=(3U<<16)+0U; // Version 3.0
 
 }
