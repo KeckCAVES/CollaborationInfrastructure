@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2012 Oliver Kreylos
+Copyright (c) 2007-2013 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -267,10 +267,10 @@ void CollaborationClient::followClient(const CollaborationProtocol::ClientState&
 	/* Update the navigation transformation: */
 	Vrui::NavTransform nav=Vrui::NavTransform::identity;
 	nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
-	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Vrui::getForwardDirection()^Vrui::getUpDirection(),Vrui::getForwardDirection()));
 	nav*=Vrui::NavTransform::scale(Vrui::getDisplaySize());
 	nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.displaySize));
-	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
+	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(cs.forward^cs.up),Vrui::Vector(cs.forward))));
 	nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
 	nav*=cs.navTransform;
 	Vrui::setNavigationTransformation(nav);
@@ -282,10 +282,10 @@ void CollaborationClient::faceClient(const CollaborationProtocol::ClientState& c
 	Vrui::NavTransform nav=Vrui::NavTransform::identity;
 	nav*=Vrui::NavTransform::translateFromOriginTo(Vrui::getDisplayCenter());
 	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::rotateAxis(Vrui::getUpDirection(),Math::rad(Vrui::Scalar(180))));
-	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Geometry::cross(Vrui::getForwardDirection(),Vrui::getUpDirection()),Vrui::getForwardDirection()));
+	nav*=Vrui::NavTransform::rotate(Vrui::Rotation::fromBaseVectors(Vrui::getForwardDirection()^Vrui::getUpDirection(),Vrui::getForwardDirection()));
 	nav*=Vrui::NavTransform::scale(Vrui::getInchFactor());
 	nav*=Vrui::NavTransform::scale(Vrui::Scalar(1)/Vrui::Scalar(cs.inchFactor));
-	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(Geometry::cross(cs.forward,cs.up)),Vrui::Vector(cs.forward))));
+	nav*=Vrui::NavTransform::rotate(Geometry::invert(Vrui::Rotation::fromBaseVectors(Vrui::Vector(cs.forward^cs.up),Vrui::Vector(cs.forward))));
 	nav*=Vrui::NavTransform::translateToOriginFrom(Vrui::Point(cs.displayCenter));
 	nav*=cs.navTransform;
 	Vrui::setNavigationTransformation(nav);

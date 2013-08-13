@@ -1,7 +1,7 @@
 /***********************************************************************
 CheriaServer - Server object to implement the Cheria input device
 distribution protocol.
-Copyright (c) 2010-2011 Oliver Kreylos
+Copyright (c) 2010-2013 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
