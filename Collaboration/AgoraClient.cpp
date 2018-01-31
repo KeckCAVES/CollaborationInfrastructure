@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraClient - Client object to implement the Agora group audio protocol.
-Copyright (c) 2009-2012 Oliver Kreylos
+Copyright (c) 2009-2014 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 

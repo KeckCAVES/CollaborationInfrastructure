@@ -414,7 +414,7 @@ void CheriaClient::inputDeviceCreationCallback(Vrui::InputDeviceManager::InputDe
 void CheriaClient::inputDeviceDestructionCallback(Vrui::InputDeviceManager::InputDeviceDestructionCallbackData* cbData)
 	{
 	/* Ignore devices being destroyed by remote Cheria clients: */
-	if(!remoteClientDestroyingDevice)
+	if(!(remoteClientDestroyingDevice||remoteClientDestroyingTool))
 		{
 		Threads::Mutex::Lock localDevicesLock(localDevicesMutex);
 		

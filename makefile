@@ -1,6 +1,6 @@
 ########################################################################
 # Makefile for Vrui collaboration infrastructure.
-# Copyright (c) 2009-2013 Oliver Kreylos
+# Copyright (c) 2009-2018 Oliver Kreylos
 #
 # This file is part of the WhyTools Build Environment.
 # 
@@ -24,7 +24,7 @@
 # matches the default Vrui installation; if Vrui's installation
 # directory was changed during Vrui's installation, the directory below
 # must be adapted.
-VRUI_MAKEDIR := $(HOME)/Vrui-3.0/share/make
+VRUI_MAKEDIR := /usr/local/share/Vrui-4.4/make
 ifdef DEBUG
   VRUI_MAKEDIR := $(VRUI_MAKEDIR)/debug
 endif
@@ -45,9 +45,9 @@ COLLABORATIONPLUGINSDIREXT = CollaborationPlugins
 PACKAGEROOT := $(shell pwd)
 
 # Specify version of created dynamic shared libraries
-COLLABORATION_VERSION = 2006
+COLLABORATION_VERSION = 2008
 MAJORLIBVERSION = 2
-MINORLIBVERSION = 6
+MINORLIBVERSION = 8
 COLLABORATION_NAME := Collaboration-$(MAJORLIBVERSION).$(MINORLIBVERSION)
 
 # Include definitions for the system environment and system-provided
@@ -388,7 +388,7 @@ ifdef INSTALLPREFIX
   MAKEINSTALLDIR := $(INSTALLPREFIX)/$(MAKEINSTALLDIR)
 endif
 
-install: all
+install: config
 # Install all header files in HEADERINSTALLDIR:
 	@echo Installing header files...
 	@install -d $(HEADERINSTALLDIR)/Collaboration

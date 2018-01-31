@@ -2,7 +2,7 @@
 CollaborationClient - Class to support collaboration between
 applications in spatially distributed (immersive) visualization
 environments.
-Copyright (c) 2007-2013 Oliver Kreylos
+Copyright (c) 2007-2014 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -468,12 +468,11 @@ void* CollaborationClient::communicationThreadMethod(void)
 					/* Create a new client state structure: */
 					Misc::SelfDestructPointer<RemoteClientState> newClient(new RemoteClientState);
 					
-					/* Receive the new client's state: */
+					/* Receive the new client's state and push it into the output buffer: */
 					newClient->clientID=pipe->read<Card>();
-					ClientState& newState=newClient->state.startNewValue();
-					readClientState(newState,*pipe);
-					std::string newClientName=newState.clientName;
-					newClient->state.postNewValue();
+					readClientState(newClient->currentState,*pipe);
+					std::string newClientName=newClient->currentState.clientName;
+					newClient->state.postNewValue(newClient->currentState);
 					
 					/* Receive the list of protocols shared with the remote client, and let the plug-ins read their message payloads: */
 					unsigned int numProtocols=pipe->read<Card>();
@@ -559,13 +558,11 @@ void* CollaborationClient::communicationThreadMethod(void)
 						RemoteClientState* client=myClientMap.getEntry(clientID).getDest();
 						
 						/* Read the client's transient state: */
-						ClientState& newState=client->state.startNewValue();
-						newState=client->state.getMostRecentValue();
-						newState.updateMask=ClientState::NO_CHANGE;
-						readClientState(newState,*pipe);
-						client->updateMask|=newState.updateMask;
-						mustRefresh=mustRefresh||newState.updateMask!=ClientState::NO_CHANGE;
-						client->state.postNewValue();
+						client->currentState.updateMask=ClientState::NO_CHANGE;
+						readClientState(client->currentState,*pipe);
+						client->updateMask|=client->currentState.updateMask;
+						mustRefresh=mustRefresh||client->currentState.updateMask!=ClientState::NO_CHANGE;
+						client->state.postNewValue(client->currentState);
 						
 						/* Process plug-in protocols shared with the remote client: */
 						for(RemoteClientState::RemoteClientProtocolList::const_iterator cplIt=client->protocols.begin();cplIt!=client->protocols.end();++cplIt)
