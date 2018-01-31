@@ -1,6 +1,6 @@
 /***********************************************************************
 AgoraClient - Client object to implement the Agora group audio protocol.
-Copyright (c) 2009-2012 Oliver Kreylos
+Copyright (c) 2009-2014 Oliver Kreylos
 
 This file is part of the Vrui remote collaboration infrastructure.
 
@@ -25,6 +25,7 @@ Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
 
 #include <string>
 #include <Threads/MutexCond.h>
+#include <Threads/Thread.h>
 #include <Threads/TripleBuffer.h>
 #include <Threads/DropoutBuffer.h>
 #include <GL/gl.h>

@@ -74,3 +74,12 @@ CollaborationInfrastructure-2.6:
   - Added ray start parameter to sharing state.
   - Added linear and angular device velocities to sharing state.
   - Updated protocol version to 3.0.
+
+CollaborationInfrastructure-2.7:
+- Bumped Vrui version requirement to Vrui-3.1-002.
+- Fixed dependency of install: makefile target.
+- Fixed missing #include <Threads/Thread.h> in AgoraClient.h. Reported
+  by William Sherman.
+
+CollaborationInfrastructure-2.8:
+- Bumped Vrui version requirement to Vrui-4.4-001.
